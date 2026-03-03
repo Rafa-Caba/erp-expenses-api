@@ -1,0 +1,69 @@
+# =========================
+# Dependencies
+# =========================
+node_modules/
+
+# =========================
+# Build outputs
+# =========================
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# =========================
+# Environment files
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# =========================
+# Testing / Coverage
+# =========================
+coverage/
+.nyc_output/
+jest-cache/
+.vitest/
+*.lcov
+
+# =========================
+# Cache folders
+# =========================
+.cache/
+.tmp/
+tmp/
+temp/
+.eslintcache
+.turbo/
+.parcel-cache/
+
+# =========================
+# TypeScript (optional)
+# =========================
+*.d.ts.map
+
+# =========================
+# Docker (optional)
+# =========================
+docker-data/
