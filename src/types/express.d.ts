@@ -1,19 +1,21 @@
 // src/types/express.d.ts
 
-import type { WorkspaceDoc } from "@/src/workspaces/models/Workspace.model";
-import type { WorkspaceMemberDoc } from "@/src/workspaces/models/WorkspaceMember.model";
+import "express";
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        id: string;
-      };
+export type WorkspaceKind = "INDIVIDUAL" | "SHARED";
+export type WorkspaceRole = "OWNER" | "ADMIN" | "MEMBER" | "VIEWER";
 
-      workspace?: WorkspaceDoc;
-      workspaceMember?: WorkspaceMemberDoc;
-    }
+declare module "express-serve-static-core" {
+  interface Request {
+    user?: {
+      id: string;
+      email?: string;
+    };
+
+    workspaceAccess?: {
+      workspaceId: string;
+      workspaceKind: WorkspaceKind;
+      role: WorkspaceRole;
+    };
   }
 }
-
-export {};

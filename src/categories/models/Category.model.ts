@@ -1,58 +1,35 @@
 // src/categories/models/Category.model.ts
 
-import mongoose, {
-  Schema,
-  type InferSchemaType,
-  type Model,
-  Types,
-} from "mongoose";
+import mongoose, { Schema, type InferSchemaType, type Model } from "mongoose";
 import { applyToJsonTransform } from "@/src/shared/models/toJson";
-import type { CategoryType } from "@/src/categories/types/category.types";
 
 const CategorySchema = new Schema(
   {
-    workspaceId: {
-      type: Types.ObjectId,
-      ref: "Workspace",
-      required: true,
-      index: true,
-    },
+    workspaceId: { type: Schema.Types.ObjectId, ref: "Workspace", required: true, index: true },
 
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-      minlength: 2,
-      maxlength: 80,
-    },
+    name: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
 
-    type: {
-      type: String,
-      required: true,
-      enum: ["expense", "income", "both"] satisfies CategoryType[],
-      default: "expense",
-    },
+    type: { type: String, required: true, enum: ["INCOME", "EXPENSE"], index: true },
 
-    isActive: { type: Boolean, required: true, default: true },
+    color: { type: String, default: null },
+    iconKey: { type: String, default: null },
 
-    createdByUserId: {
-      type: Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true,
-    },
-    updatedByUserId: { type: Types.ObjectId, ref: "User", default: null },
+    isActive: { type: Boolean, default: true, index: true },
+
+    note: { type: String, default: null },
+
+    createdByUserId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    updatedByUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true }
 );
 
-CategorySchema.index({ workspaceId: 1, isActive: 1, type: 1 });
-CategorySchema.index({ workspaceId: 1, name: 1 }, { unique: false });
+CategorySchema.index({ workspaceId: 1, type: 1, name: 1 }, { unique: true });
+CategorySchema.index({ workspaceId: 1, isActive: 1, type: 1, name: 1 });
 
 applyToJsonTransform(CategorySchema);
 
 export type CategoryDoc = InferSchemaType<typeof CategorySchema>;
 
 export const CategoryModel: Model<CategoryDoc> =
-  mongoose.models.Category ||
-  mongoose.model<CategoryDoc>("Category", CategorySchema);
+  mongoose.models.Category || mongoose.model<CategoryDoc>("Category", CategorySchema);

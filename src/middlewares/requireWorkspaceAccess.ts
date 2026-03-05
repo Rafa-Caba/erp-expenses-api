@@ -40,6 +40,8 @@ export function requireWorkspaceAccess(paramName: string = "workspaceId") {
       req.workspace = workspace;
       req.workspaceMember = member;
 
+      console.log("[workspaceAccess]", { workspaceId, userId, role: member.role, workspaceKind: workspace.kind });
+
       return next();
     } catch (err) {
       return next(err);
