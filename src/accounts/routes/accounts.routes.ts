@@ -1,26 +1,69 @@
-// src/accounts/routes/accounts.routes.ts
+// src/accounts/routes/account.routes.ts
 
 import { Router } from "express";
-import { requireAuth } from "@/src/middlewares/requireAuth";
-import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
+
 import {
-    handleCreateAccount,
-    handleDisableAccount,
-    handleEnableAccount,
-    handleGetAccount,
-    handleListAccounts,
-    handlePatchAccount,
-} from "@/src/accounts/controllers/accounts.controller";
+    archiveAccountController,
+    createAccountController,
+    getAccountByIdController,
+    getAccountsController,
+    updateAccountController,
+} from "../controllers/accounts.controller";
+import {
+    accountParamsSchema,
+    createAccountSchema,
+    updateAccountSchema,
+    workspaceAccountParamsSchema,
+} from "../schemas/account.schemas";
+import type {
+    AccountParams,
+    CreateAccountBody,
+    UpdateAccountBody,
+    WorkspaceAccountParams,
+} from "../types/account.types";
+import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
+import { requireWorkspacePermission } from "@/src/middlewares/requireWorkspacePermission";
+import { validateRequest } from "@/src/middlewares/validateRequest";
 
-export const accountsRouter = Router({ mergeParams: true });
+const accountRouter = Router({ mergeParams: true });
 
-accountsRouter.use(requireAuth);
-accountsRouter.use(requireWorkspaceAccess("workspaceId"));
+accountRouter.use(requireWorkspaceAccess());
 
-accountsRouter.get("/", handleListAccounts);
-accountsRouter.post("/", handleCreateAccount);
+accountRouter.get<WorkspaceAccountParams>(
+    "/",
+    validateRequest(workspaceAccountParamsSchema),
+    requireWorkspacePermission("accounts.read"),
+    getAccountsController
+);
 
-accountsRouter.get("/:accountId", handleGetAccount);
-accountsRouter.patch("/:accountId", handlePatchAccount);
-accountsRouter.patch("/:accountId/disable", handleDisableAccount);
-accountsRouter.patch("/:accountId/enable", handleEnableAccount);
+accountRouter.get<AccountParams>(
+    "/:accountId",
+    validateRequest(accountParamsSchema),
+    requireWorkspacePermission("accounts.read"),
+    getAccountByIdController
+);
+
+accountRouter.post<WorkspaceAccountParams, object, CreateAccountBody>(
+    "/",
+    validateRequest(workspaceAccountParamsSchema),
+    validateRequest(createAccountSchema),
+    requireWorkspacePermission("accounts.create"),
+    createAccountController
+);
+
+accountRouter.patch<AccountParams, object, UpdateAccountBody>(
+    "/:accountId",
+    validateRequest(accountParamsSchema),
+    validateRequest(updateAccountSchema),
+    requireWorkspacePermission("accounts.update"),
+    updateAccountController
+);
+
+accountRouter.delete<AccountParams>(
+    "/:accountId",
+    validateRequest(accountParamsSchema),
+    requireWorkspacePermission("accounts.delete"),
+    archiveAccountController
+);
+
+export { accountRouter };

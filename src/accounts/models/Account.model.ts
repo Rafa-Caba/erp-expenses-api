@@ -1,46 +1,138 @@
 // src/accounts/models/Account.model.ts
 
-import mongoose, { Schema, type InferSchemaType, type Model } from "mongoose";
-import { applyToJsonTransform } from "@/src/shared/models/toJson";
+import { Schema, model, type Model, type Types } from "mongoose";
+
 import type { CurrencyCode } from "@/src/shared/types/common";
+import type { AccountType } from "../types/account.types";
 
-const AccountSchema = new Schema(
-  {
-    workspaceId: { type: Schema.Types.ObjectId, ref: "Workspace", required: true, index: true },
+export interface AccountDocument {
+    _id: Types.ObjectId;
+    workspaceId: Types.ObjectId;
+    ownerMemberId?: Types.ObjectId | null;
+    name: string;
+    type: AccountType;
+    bankName?: string | null;
+    accountNumberMasked?: string | null;
+    currency: CurrencyCode;
+    initialBalance: number;
+    currentBalance: number;
+    creditLimit?: number | null;
+    statementClosingDay?: number | null;
+    paymentDueDay?: number | null;
+    notes?: string | null;
+    isActive: boolean;
+    isArchived?: boolean;
+    isVisible?: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+}
 
-    name: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
-
-    type: { type: String, required: true, enum: ["CASH", "BANK", "CREDIT_CARD"] },
-
-    currency: {
-      type: String,
-      required: true,
-      enum: ["MXN", "USD"],
-      default: "MXN" satisfies CurrencyCode,
-      index: true,
+const accountSchema = new Schema<AccountDocument>(
+    {
+        workspaceId: {
+            type: Schema.Types.ObjectId,
+            ref: "Workspace",
+            required: true,
+            index: true,
+        },
+        ownerMemberId: {
+            type: Schema.Types.ObjectId,
+            ref: "WorkspaceMember",
+            default: null,
+            index: true,
+        },
+        name: {
+            type: String,
+            required: true,
+            trim: true,
+            maxlength: 120,
+        },
+        type: {
+            type: String,
+            enum: ["cash", "bank", "wallet", "savings", "credit"],
+            required: true,
+            trim: true,
+        },
+        bankName: {
+            type: String,
+            trim: true,
+            maxlength: 120,
+            default: null,
+        },
+        accountNumberMasked: {
+            type: String,
+            trim: true,
+            maxlength: 30,
+            default: null,
+        },
+        currency: {
+            type: String,
+            enum: ["MXN", "USD"],
+            required: true,
+            trim: true,
+        },
+        initialBalance: {
+            type: Number,
+            required: true,
+            default: 0,
+        },
+        currentBalance: {
+            type: Number,
+            required: true,
+            default: 0,
+        },
+        creditLimit: {
+            type: Number,
+            default: null,
+            min: 0,
+        },
+        statementClosingDay: {
+            type: Number,
+            default: null,
+            min: 1,
+            max: 31,
+        },
+        paymentDueDay: {
+            type: Number,
+            default: null,
+            min: 1,
+            max: 31,
+        },
+        notes: {
+            type: String,
+            trim: true,
+            maxlength: 1000,
+            default: null,
+        },
+        isActive: {
+            type: Boolean,
+            required: true,
+            default: true,
+        },
+        isArchived: {
+            type: Boolean,
+            default: false,
+        },
+        isVisible: {
+            type: Boolean,
+            default: true,
+        },
     },
-
-    note: { type: String, default: null },
-
-    initialBalance: { type: Number, required: true, default: 0 },
-
-    isActive: { type: Boolean, default: true, index: true },
-
-    createdByUserId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    updatedByUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
-  },
-  { timestamps: true }
+    {
+        timestamps: true,
+        versionKey: false,
+    }
 );
 
-// Unique name per workspace (simple but practical)
-AccountSchema.index({ workspaceId: 1, name: 1 }, { unique: true });
+accountSchema.index({ workspaceId: 1, isArchived: 1 });
+accountSchema.index({ workspaceId: 1, isActive: 1 });
+accountSchema.index({ workspaceId: 1, type: 1 });
+accountSchema.index({ workspaceId: 1, ownerMemberId: 1 });
+accountSchema.index({ workspaceId: 1, name: 1 });
 
-// Helpful list indexes
-AccountSchema.index({ workspaceId: 1, isActive: 1, name: 1 });
+export type AccountModelType = Model<AccountDocument>;
 
-applyToJsonTransform(AccountSchema);
-
-export type AccountDoc = InferSchemaType<typeof AccountSchema>;
-
-export const AccountModel: Model<AccountDoc> =
-  mongoose.models.Account || mongoose.model<AccountDoc>("Account", AccountSchema);
+export const AccountModel = model<AccountDocument, AccountModelType>(
+    "Account",
+    accountSchema
+);

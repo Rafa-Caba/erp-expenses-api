@@ -1,32 +1,86 @@
 // src/accounts/types/account.types.ts
 
-import type {
-  AccountType,
-  CurrencyCode,
-  Visibility,
-} from "@/src/shared/types/common";
+import type { ParamsDictionary } from "express-serve-static-core";
+import type { Types } from "mongoose";
 
-export interface AccountEntity {
-  id: string;
-  workspaceId: string;
+import type { CurrencyCode } from "@/src/shared/types/common";
 
-  name: string;
-  type: AccountType;
-  currency: CurrencyCode;
+export type AccountType = "cash" | "bank" | "wallet" | "savings" | "credit";
 
-  startingBalance: number;
-  isActive: boolean;
+export interface WorkspaceAccountParams extends ParamsDictionary {
+    workspaceId: string;
+}
 
-  visibility: Visibility;
-  ownerUserId: string | null;
+export interface AccountParams extends ParamsDictionary {
+    workspaceId: string;
+    accountId: string;
+}
 
-  creditLimit: number | null;
-  statementDay: number | null;
-  dueDay: number | null;
+export interface CreateAccountBody {
+    ownerMemberId?: string;
+    name: string;
+    type: AccountType;
+    bankName?: string;
+    accountNumberMasked?: string;
+    currency: CurrencyCode;
+    initialBalance: number;
+    currentBalance?: number;
+    creditLimit?: number;
+    statementClosingDay?: number;
+    paymentDueDay?: number;
+    notes?: string;
+    isActive?: boolean;
+    isArchived?: boolean;
+    isVisible?: boolean;
+}
 
-  createdByUserId: string;
-  updatedByUserId: string | null;
+export interface UpdateAccountBody {
+    ownerMemberId?: string;
+    name?: string;
+    type?: AccountType;
+    bankName?: string;
+    accountNumberMasked?: string;
+    currency?: CurrencyCode;
+    initialBalance?: number;
+    currentBalance?: number;
+    creditLimit?: number;
+    statementClosingDay?: number;
+    paymentDueDay?: number;
+    notes?: string;
+    isActive?: boolean;
+    isArchived?: boolean;
+    isVisible?: boolean;
+}
 
-  createdAt: Date;
-  updatedAt: Date;
+export interface AccountResponseDto {
+    id: string;
+    workspaceId: string;
+    ownerMemberId: string | null;
+    name: string;
+    type: AccountType;
+    bankName: string | null;
+    accountNumberMasked: string | null;
+    currency: CurrencyCode;
+    initialBalance: number;
+    currentBalance: number;
+    creditLimit: number | null;
+    statementClosingDay: number | null;
+    paymentDueDay: number | null;
+    notes: string | null;
+    isActive: boolean;
+    isArchived: boolean;
+    isVisible: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface CreateAccountServiceInput {
+    workspaceId: Types.ObjectId;
+    body: CreateAccountBody;
+}
+
+export interface UpdateAccountServiceInput {
+    workspaceId: Types.ObjectId;
+    accountId: Types.ObjectId;
+    body: UpdateAccountBody;
 }

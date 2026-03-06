@@ -1,236 +1,234 @@
-// src/accounts/controllers/accounts.controller.ts
+// src/accounts/controllers/account.controller.ts
 
-import type { Request, Response, NextFunction } from "express";
-import mongoose from "mongoose";
+import type { RequestHandler } from "express";
+import { Types } from "mongoose";
+
 import {
-    AccountIdParamsSchema,
-    AccountsListQuerySchema,
-    CreateAccountSchema,
-    UpdateAccountSchema,
-} from "@/src/accounts/schemas/account.schemas";
-import {
-    createAccount,
-    getAccountById,
-    listAccounts,
-    setAccountActive,
-    updateAccount,
-} from "@/src/accounts/services/accounts.service";
+    archiveAccountService,
+    createAccountService,
+    getAccountByIdService,
+    getAccountsService,
+    isAccountServiceError,
+    updateAccountService,
+    AccountServiceError,
+} from "../services/accounts.service";
+import type {
+    AccountParams,
+    CreateAccountBody,
+    UpdateAccountBody,
+    WorkspaceAccountParams,
+} from "../types/account.types";
 
-function requireUserId(req: Request): string {
-    const id = req.user?.id;
-    if (!id) {
-        const e = new Error("Unauthorized");
-        (e as { status?: number }).status = 401;
-        throw e;
+function getObjectIdOrThrow(value: string): Types.ObjectId {
+    if (!Types.ObjectId.isValid(value)) {
+        throw new AccountServiceError(
+            "El id proporcionado no es válido.",
+            400,
+            "INVALID_OBJECT_ID"
+        );
     }
-    return id;
+
+    return new Types.ObjectId(value);
 }
 
-function requireWorkspaceAccess(req: Request, workspaceId: string) {
-    const wa = req.workspaceAccess;
-    if (!wa || wa.workspaceId !== workspaceId) {
-        const e = new Error("Workspace access not resolved");
-        (e as { status?: number }).status = 500;
-        throw e;
-    }
-    return wa;
-}
-
-function assertValidObjectId(id: string, name: string) {
-    if (!mongoose.isValidObjectId(id)) {
-        const e = new Error(`Invalid ${name}`);
-        (e as { status?: number }).status = 400;
-        throw e;
-    }
-}
-
-export async function handleListAccounts(req: Request, res: Response, next: NextFunction) {
+export const getAccountsController: RequestHandler<
+    WorkspaceAccountParams
+> = async (req, res, next): Promise<void> => {
     try {
-        requireUserId(req);
+        if (!req.workspace) {
+            res.status(404).json({
+                code: "WORKSPACE_NOT_FOUND",
+                message: "Workspace no encontrado.",
+            });
+            return;
+        }
 
-        const workspaceId = String(req.params.workspaceId ?? "");
-        assertValidObjectId(workspaceId, "workspaceId");
+        const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
+        const accounts = await getAccountsService(workspaceId);
 
-        const parsed = AccountsListQuerySchema.safeParse(req.query);
-        if (!parsed.success) return res.status(400).json({ message: "Invalid query", issues: parsed.error.issues });
+        res.status(200).json({
+            message: "Cuentas obtenidas correctamente.",
+            accounts,
+        });
+    } catch (error) {
+        if (error instanceof Error && isAccountServiceError(error)) {
+            res.status(error.statusCode).json({
+                code: error.code,
+                message: error.message,
+            });
+            return;
+        }
 
-        const items = await listAccounts({
+        next(error);
+    }
+};
+
+export const getAccountByIdController: RequestHandler<
+    AccountParams
+> = async (req, res, next): Promise<void> => {
+    try {
+        if (!req.workspace) {
+            res.status(404).json({
+                code: "WORKSPACE_NOT_FOUND",
+                message: "Workspace no encontrado.",
+            });
+            return;
+        }
+
+        const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
+        const accountId = getObjectIdOrThrow(req.params.accountId);
+
+        const account = await getAccountByIdService(workspaceId, accountId);
+
+        if (!account) {
+            res.status(404).json({
+                code: "ACCOUNT_NOT_FOUND",
+                message: "Cuenta no encontrada.",
+            });
+            return;
+        }
+
+        res.status(200).json({
+            message: "Cuenta obtenida correctamente.",
+            account,
+        });
+    } catch (error) {
+        if (error instanceof Error && isAccountServiceError(error)) {
+            res.status(error.statusCode).json({
+                code: error.code,
+                message: error.message,
+            });
+            return;
+        }
+
+        next(error);
+    }
+};
+
+export const createAccountController: RequestHandler<
+    WorkspaceAccountParams,
+    object,
+    CreateAccountBody
+> = async (req, res, next): Promise<void> => {
+    try {
+        if (!req.workspace) {
+            res.status(404).json({
+                code: "WORKSPACE_NOT_FOUND",
+                message: "Workspace no encontrado.",
+            });
+            return;
+        }
+
+        const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
+
+        const account = await createAccountService({
             workspaceId,
-            includeInactive: parsed.data.includeInactive,
+            body: req.body,
         });
 
-        return res.json(items.map((x) => x.toJSON()));
-    } catch (err) {
-        const e = err as { status?: number; message?: string };
-        if (e.status) return res.status(e.status).json({ message: e.message ?? "Error" });
-        return next(err);
-    }
-}
-
-export async function handleCreateAccount(req: Request, res: Response, next: NextFunction) {
-    try {
-        const userId = requireUserId(req);
-
-        const workspaceId = String(req.params.workspaceId ?? "");
-        assertValidObjectId(workspaceId, "workspaceId");
-
-        const wa = requireWorkspaceAccess(req, workspaceId);
-
-        const parsed = CreateAccountSchema.safeParse(req.body);
-        if (!parsed.success) return res.status(400).json({ message: "Invalid body", issues: parsed.error.issues });
-
-        const doc = await createAccount({
-            workspaceId,
-            access: {
-                actorUserId: userId,
-                workspaceKind: wa.workspaceKind,
-                role: wa.role,
-            },
-            input: {
-                name: parsed.data.name,
-                type: parsed.data.type,
-                currency: parsed.data.currency,
-                initialBalance: parsed.data.initialBalance,
-                note: parsed.data.note ?? null,
-            },
+        res.status(201).json({
+            message: "Cuenta creada correctamente.",
+            account,
         });
+    } catch (error) {
+        if (error instanceof Error && isAccountServiceError(error)) {
+            res.status(error.statusCode).json({
+                code: error.code,
+                message: error.message,
+            });
+            return;
+        }
 
-        return res.status(201).json(doc.toJSON());
-    } catch (err) {
-        const e = err as { status?: number; message?: string };
-        if (e.status) return res.status(e.status).json({ message: e.message ?? "Error" });
-        return next(err);
+        next(error);
     }
-}
+};
 
-export async function handleGetAccount(req: Request, res: Response, next: NextFunction) {
+export const updateAccountController: RequestHandler<
+    AccountParams,
+    object,
+    UpdateAccountBody
+> = async (req, res, next): Promise<void> => {
     try {
-        requireUserId(req);
+        if (!req.workspace) {
+            res.status(404).json({
+                code: "WORKSPACE_NOT_FOUND",
+                message: "Workspace no encontrado.",
+            });
+            return;
+        }
 
-        const parsed = AccountIdParamsSchema.safeParse(req.params);
-        if (!parsed.success) return res.status(400).json({ message: "Invalid params", issues: parsed.error.issues });
+        const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
+        const accountId = getObjectIdOrThrow(req.params.accountId);
 
-        const { workspaceId, accountId } = parsed.data;
-        assertValidObjectId(workspaceId, "workspaceId");
-        assertValidObjectId(accountId, "accountId");
-
-        const doc = await getAccountById({ workspaceId, accountId });
-        if (!doc) return res.status(404).json({ message: "Account not found" });
-
-        return res.json(doc.toJSON());
-    } catch (err) {
-        const e = err as { status?: number; message?: string };
-        if (e.status) return res.status(e.status).json({ message: e.message ?? "Error" });
-        return next(err);
-    }
-}
-
-export async function handlePatchAccount(req: Request, res: Response, next: NextFunction) {
-    try {
-        const userId = requireUserId(req);
-
-        const parsedParams = AccountIdParamsSchema.safeParse(req.params);
-        if (!parsedParams.success) return res.status(400).json({ message: "Invalid params", issues: parsedParams.error.issues });
-
-        const parsedBody = UpdateAccountSchema.safeParse(req.body);
-        if (!parsedBody.success) return res.status(400).json({ message: "Invalid body", issues: parsedBody.error.issues });
-
-        const { workspaceId, accountId } = parsedParams.data;
-        assertValidObjectId(workspaceId, "workspaceId");
-        assertValidObjectId(accountId, "accountId");
-
-        const wa = requireWorkspaceAccess(req, workspaceId);
-
-        const updated = await updateAccount({
-            workspaceId,
-            accountId,
-            access: {
-                actorUserId: userId,
-                workspaceKind: wa.workspaceKind,
-                role: wa.role,
-            },
-            patch: {
-                name: parsedBody.data.name,
-                type: parsedBody.data.type,
-                currency: parsedBody.data.currency,
-                note: parsedBody.data.note ?? undefined,
-            },
-        });
-
-        if (!updated) return res.status(404).json({ message: "Account not found" });
-
-        return res.json(updated.toJSON());
-    } catch (err) {
-        const e = err as { status?: number; message?: string };
-        if (e.status) return res.status(e.status).json({ message: e.message ?? "Error" });
-        return next(err);
-    }
-}
-
-export async function handleDisableAccount(req: Request, res: Response, next: NextFunction) {
-    try {
-        const userId = requireUserId(req);
-
-        const parsed = AccountIdParamsSchema.safeParse(req.params);
-        if (!parsed.success) return res.status(400).json({ message: "Invalid params", issues: parsed.error.issues });
-
-        const { workspaceId, accountId } = parsed.data;
-        assertValidObjectId(workspaceId, "workspaceId");
-        assertValidObjectId(accountId, "accountId");
-
-        const wa = requireWorkspaceAccess(req, workspaceId);
-
-        const updated = await setAccountActive({
+        const account = await updateAccountService({
             workspaceId,
             accountId,
-            isActive: false,
-            access: {
-                actorUserId: userId,
-                workspaceKind: wa.workspaceKind,
-                role: wa.role,
-            },
+            body: req.body,
         });
 
-        if (!updated) return res.status(404).json({ message: "Account not found" });
+        if (!account) {
+            res.status(404).json({
+                code: "ACCOUNT_NOT_FOUND",
+                message: "Cuenta no encontrada.",
+            });
+            return;
+        }
 
-        return res.json(updated.toJSON());
-    } catch (err) {
-        const e = err as { status?: number; message?: string };
-        if (e.status) return res.status(e.status).json({ message: e.message ?? "Error" });
-        return next(err);
+        res.status(200).json({
+            message: "Cuenta actualizada correctamente.",
+            account,
+        });
+    } catch (error) {
+        if (error instanceof Error && isAccountServiceError(error)) {
+            res.status(error.statusCode).json({
+                code: error.code,
+                message: error.message,
+            });
+            return;
+        }
+
+        next(error);
     }
-}
+};
 
-export async function handleEnableAccount(req: Request, res: Response, next: NextFunction) {
+export const archiveAccountController: RequestHandler<
+    AccountParams
+> = async (req, res, next): Promise<void> => {
     try {
-        const userId = requireUserId(req);
+        if (!req.workspace) {
+            res.status(404).json({
+                code: "WORKSPACE_NOT_FOUND",
+                message: "Workspace no encontrado.",
+            });
+            return;
+        }
 
-        const parsed = AccountIdParamsSchema.safeParse(req.params);
-        if (!parsed.success) return res.status(400).json({ message: "Invalid params", issues: parsed.error.issues });
+        const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
+        const accountId = getObjectIdOrThrow(req.params.accountId);
 
-        const { workspaceId, accountId } = parsed.data;
-        assertValidObjectId(workspaceId, "workspaceId");
-        assertValidObjectId(accountId, "accountId");
+        const account = await archiveAccountService(workspaceId, accountId);
 
-        const wa = requireWorkspaceAccess(req, workspaceId);
+        if (!account) {
+            res.status(404).json({
+                code: "ACCOUNT_NOT_FOUND",
+                message: "Cuenta no encontrada.",
+            });
+            return;
+        }
 
-        const updated = await setAccountActive({
-            workspaceId,
-            accountId,
-            isActive: true,
-            access: {
-                actorUserId: userId,
-                workspaceKind: wa.workspaceKind,
-                role: wa.role,
-            },
+        res.status(200).json({
+            message: "Cuenta archivada correctamente.",
+            account,
         });
+    } catch (error) {
+        if (error instanceof Error && isAccountServiceError(error)) {
+            res.status(error.statusCode).json({
+                code: error.code,
+                message: error.message,
+            });
+            return;
+        }
 
-        if (!updated) return res.status(404).json({ message: "Account not found" });
-
-        return res.json(updated.toJSON());
-    } catch (err) {
-        const e = err as { status?: number; message?: string };
-        if (e.status) return res.status(e.status).json({ message: e.message ?? "Error" });
-        return next(err);
+        next(error);
     }
-}
+};
