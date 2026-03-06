@@ -5,6 +5,9 @@ export const workspacePermissionValues = [
     "workspace.update",
     "workspace.archive",
 
+    "workspace.settings.read",
+    "workspace.settings.update",
+
     "workspace.members.read",
     "workspace.members.create",
     "workspace.members.update",

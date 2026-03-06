@@ -13,6 +13,8 @@ const adminPermissions: WorkspacePermission[] = [...allWorkspacePermissions];
 const memberPermissions: WorkspacePermission[] = [
     "workspace.read",
 
+    "workspace.settings.read",
+
     "accounts.read",
     "accounts.create",
     "accounts.update",
@@ -33,6 +35,8 @@ const memberPermissions: WorkspacePermission[] = [
 
 const viewerPermissions: WorkspacePermission[] = [
     "workspace.read",
+
+    "workspace.settings.read",
 
     "accounts.read",
     "categories.read",

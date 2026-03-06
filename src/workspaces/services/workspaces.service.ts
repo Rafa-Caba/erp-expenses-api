@@ -2,6 +2,8 @@
 
 import { Types } from "mongoose";
 
+import { createDefaultWorkspaceSettingsService } from "@/src/workspaceSettings/services/workspaceSettings.service";
+
 import { WorkspaceModel, type WorkspaceDocument } from "../models/Workspace.model";
 import { WorkspaceMemberModel } from "../models/WorkspaceMember.model";
 import type {
@@ -82,6 +84,12 @@ export async function createWorkspaceService(
     });
 
     await createOwnerMembership(workspace._id, ownerUserId, body.name.trim());
+
+    await createDefaultWorkspaceSettingsService({
+        workspaceId: workspace._id,
+        currency: body.currency,
+        timezone: body.timezone.trim(),
+    });
 
     return mapWorkspaceToDto(workspace);
 }

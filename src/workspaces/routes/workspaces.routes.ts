@@ -19,6 +19,7 @@ import type {
     WorkspaceParams,
 } from "../types/workspace.types";
 import { workspaceMemberRouter } from "./workspaceMember.routes";
+import { workspaceSettingsRouter } from "@/src/workspaceSettings/routes/workspaceSettings.routes";
 import { validateRequest } from "@/src/middlewares/validateRequest";
 import { verifyToken } from "@/src/middlewares/verifyToken";
 
@@ -27,6 +28,7 @@ const workspacesRouter = Router();
 workspacesRouter.use(verifyToken);
 
 workspacesRouter.use("/:workspaceId/members", workspaceMemberRouter);
+workspacesRouter.use("/:workspaceId/settings", workspaceSettingsRouter);
 
 workspacesRouter.get("/", getWorkspacesController);
 
