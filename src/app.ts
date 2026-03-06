@@ -7,9 +7,11 @@ import helmet from "helmet";
 import morgan from "morgan";
 
 import { buildCorsOptions } from "@/src/config/cors";
-import { authRouter } from "@/src/auth/routes/auth.routes";
-import { workspacesRouter } from "@/src/workspaces/routes/workspaces.routes";
 
+import authRouter from "./auth/routes/auth.routes";
+import userRouter from "./users/routes/user.routes";
+
+import { workspacesRouter } from "@/src/workspaces/routes/workspaces.routes";
 import { accountsRouter } from "@/src/accounts/routes/accounts.routes";
 import { categoriesRouter } from "@/src/categories/routes/categories.routes";
 import { transactionsRouter } from "@/src/transactions/routes/transactions.routes";
@@ -28,15 +30,16 @@ export function createApp() {
   app.get("/health", (_req, res) => res.json({ ok: true }));
 
   app.use("/api/auth", authRouter);
+  app.use("/api/users", userRouter);
 
   // Workspaces (existing)
-  app.use("/api/workspaces", workspacesRouter);
+  // app.use("/api/workspaces", workspacesRouter);
 
   // Workspace-scoped modules
-  app.use("/api/workspaces/:workspaceId/accounts", accountsRouter);
-  app.use("/api/workspaces/:workspaceId/categories", categoriesRouter);
-  app.use("/api/workspaces/:workspaceId/transactions", transactionsRouter);
-  app.use("/api/workspaces/:workspaceId/summary", summaryRouter);
+  // app.use("/api/workspaces/:workspaceId/accounts", accountsRouter);
+  // app.use("/api/workspaces/:workspaceId/categories", categoriesRouter);
+  // app.use("/api/workspaces/:workspaceId/transactions", transactionsRouter);
+  // app.use("/api/workspaces/:workspaceId/summary", summaryRouter);
 
   app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
 

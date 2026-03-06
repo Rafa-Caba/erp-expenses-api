@@ -1,104 +1,76 @@
 // src/debts/models/Debt.model.ts
 
-import mongoose, {
-  Schema,
-  type InferSchemaType,
-  type Model,
-  Types,
-} from "mongoose";
+import mongoose, { Schema, type InferSchemaType, type Model } from "mongoose";
 import { applyToJsonTransform } from "@/src/shared/models/toJson";
-import type {
-  CurrencyCode,
-  DebtType,
-  Visibility,
-} from "@/src/shared/types/common";
+import type { Visibility } from "@/src/shared/types/finance";
+import type { CurrencyCode } from "@/src/shared/types/common";
 
-const DebtDueRuleSchema = new Schema(
-  {
-    kind: {
-      type: String,
-      required: true,
-      enum: ["credit_card", "loan", "custom"],
-    },
-
-    // credit_card
-    statementDay: { type: Number, default: null, min: 1, max: 31 },
-    dueDay: { type: Number, default: null, min: 1, max: 31 },
-
-    // loan
-    frequency: { type: String, default: null, enum: ["monthly", "biweekly"] },
-    dayOfMonth: { type: Number, default: null, min: 1, max: 31 },
-
-    // custom
-    note: { type: String, default: null, maxlength: 500 },
-  },
-  { _id: false }
-);
+export type DebtKind = "I_OWE" | "OWE_ME";
+export type DebtStatus = "ACTIVE" | "PAID" | "CANCELED";
 
 const DebtSchema = new Schema(
   {
-    workspaceId: {
-      type: Types.ObjectId,
-      ref: "Workspace",
+    workspaceId: { type: Schema.Types.ObjectId, ref: "Workspace", required: true, index: true },
+
+    kind: {
+      type: String,
       required: true,
+      enum: ["I_OWE", "OWE_ME"] satisfies DebtKind[],
       index: true,
     },
-
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-      minlength: 2,
-      maxlength: 120,
-    },
-
-    type: {
-      type: String,
-      required: true,
-      enum: ["credit_card", "loan", "personal", "service"] satisfies DebtType[],
-    },
-
-    principal: { type: Number, required: true, min: 0 },
-    balance: { type: Number, required: true, min: 0 },
 
     currency: {
       type: String,
       required: true,
-      enum: ["MXN", "USD"],
+      enum: ["MXN", "USD"] satisfies CurrencyCode[],
       default: "MXN" satisfies CurrencyCode,
+      index: true,
     },
-
-    apr: { type: Number, default: null, min: 0 },
-    minPayment: { type: Number, default: null, min: 0 },
-
-    startDate: { type: Date, required: true },
-
-    dueRule: { type: DebtDueRuleSchema, required: true },
 
     visibility: {
       type: String,
       required: true,
-      enum: ["shared", "private"] satisfies Visibility[],
-      default: "shared",
+      enum: ["SHARED", "PRIVATE"] satisfies Visibility[],
+      default: "SHARED" satisfies Visibility,
       index: true,
     },
 
-    ownerUserId: { type: Types.ObjectId, ref: "User", default: null },
+    /**
+     * ownerUserId rules (your definition):
+     * - If visibility === PRIVATE => ownerUserId is REQUIRED, and only owner can see/mutate.
+     * - If visibility === SHARED  => ownerUserId can be null.
+     */
+    ownerUserId: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
 
-    isActive: { type: Boolean, required: true, default: true },
+    counterparty: { type: String, required: true, trim: true, maxlength: 200 },
 
-    createdByUserId: {
-      type: Types.ObjectId,
-      ref: "User",
+    principal: { type: Number, required: true },
+    remaining: { type: Number, required: true },
+
+    dueDate: { type: Date, default: null, index: true },
+
+    note: { type: String, default: null, maxlength: 2000 },
+
+    status: {
+      type: String,
       required: true,
+      enum: ["ACTIVE", "PAID", "CANCELED"] satisfies DebtStatus[],
+      default: "ACTIVE" satisfies DebtStatus,
       index: true,
     },
-    updatedByUserId: { type: Types.ObjectId, ref: "User", default: null },
+
+    // Soft delete for history consistency (same style as transactions)
+    isDeleted: { type: Boolean, required: true, default: false, index: true },
+    deletedAt: { type: Date, default: null },
+
+    createdByUserId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    updatedByUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true }
 );
 
-DebtSchema.index({ workspaceId: 1, isActive: 1, type: 1 });
+DebtSchema.index({ workspaceId: 1, isDeleted: 1, status: 1, dueDate: 1, createdAt: -1, _id: -1 });
+DebtSchema.index({ workspaceId: 1, isDeleted: 1, kind: 1, createdAt: -1 });
 
 applyToJsonTransform(DebtSchema);
 

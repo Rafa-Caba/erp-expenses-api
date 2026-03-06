@@ -1,136 +1,366 @@
-// src/auth/controllers/auth.controller.ts
+import type { RequestHandler } from "express";
+import { ZodError } from "zod";
 
-import type { Request, Response, NextFunction } from "express";
-import { LoginSchema, RegisterSchema } from "@/src/auth/schemas/auth.schemas";
 import {
-  loginUser,
-  logoutSession,
-  refreshSession,
-  registerUser,
+    changePasswordSchema,
+    forgotPasswordSchema,
+    loginSchema,
+    logoutSchema,
+    refreshTokenSchema,
+    registerSchema,
+    resendVerificationSchema,
+    resetPasswordSchema,
+    updateMeSchema,
+    verifyEmailSchema,
+} from "@/src/auth/schemas/auth.schemas";
+import {
+    changePasswordAuthService,
+    forgotPasswordAuthService,
+    getCurrentAuthUserService,
+    loginAuthService,
+    logoutAllAuthService,
+    logoutAuthService,
+    refreshAuthService,
+    registerAuthService,
+    resendVerificationAuthService,
+    resetPasswordAuthService,
+    updateMeAuthService,
+    verifyEmailAuthService,
 } from "@/src/auth/services/auth.service";
-import { getEnv } from "@/src/config/env";
+import type { AuthenticatedUser } from "@/src/auth/types/auth.types";
 
-function setRefreshCookie(res: Response, token: string) {
-  const env = getEnv();
+type LocalsWithAuth = {
+    auth?: AuthenticatedUser;
+};
 
-  res.cookie("refreshToken", token, {
-    httpOnly: true,
-    sameSite: env.COOKIE_SAME_SITE,
-    secure: env.COOKIE_SECURE,
-    path: "/api/auth",
-    maxAge: 30 * 24 * 60 * 60 * 1000,
-  });
+function handleZodError(error: ZodError) {
+    return {
+        message: "Validation error",
+        issues: error.flatten(),
+    };
 }
 
-function clearRefreshCookie(res: Response) {
-  const env = getEnv();
-
-  res.clearCookie("refreshToken", {
-    path: "/api/auth",
-    sameSite: env.COOKIE_SAME_SITE,
-    secure: env.COOKIE_SECURE,
-  });
+function getSessionMeta(req: {
+    ip?: string;
+    get: (name: string) => string | undefined;
+}): {
+    ipAddress?: string | null;
+    userAgent?: string | null;
+} {
+    return {
+        ipAddress: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+    };
 }
 
-export async function handleRegister(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const parsed = RegisterSchema.safeParse(req.body);
-    if (!parsed.success)
-      return res
-        .status(400)
-        .json({ message: "Invalid body", issues: parsed.error.issues });
+export const registerAuthController: RequestHandler = (req, res, next) => {
+    const parsedBody = registerSchema.safeParse(req.body);
 
-    const user = await registerUser(parsed.data);
-
-    // return safe user
-    const json = user.toJSON();
-    delete (json as any).passwordHash;
-
-    return res.status(201).json(json);
-  } catch (err: any) {
-    const status = Number(err?.status ?? 500);
-    if (status !== 500)
-      return res.status(status).json({ message: err.message });
-    return next(err);
-  }
-}
-
-export async function handleLogin(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const parsed = LoginSchema.safeParse(req.body);
-    if (!parsed.success)
-      return res
-        .status(400)
-        .json({ message: "Invalid body", issues: parsed.error.issues });
-
-    const { user, accessToken, refreshToken } = await loginUser({
-      email: parsed.data.email,
-      password: parsed.data.password,
-      req,
-    });
-
-    setRefreshCookie(res, refreshToken);
-
-    const json = user.toJSON();
-    delete (json as any).passwordHash;
-
-    return res.json({ user: json, accessToken });
-  } catch (err: any) {
-    const status = Number(err?.status ?? 500);
-    if (status !== 500)
-      return res.status(status).json({ message: err.message });
-    return next(err);
-  }
-}
-
-export async function handleRefresh(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const token = String(req.cookies?.refreshToken ?? "");
-    if (!token)
-      return res.status(401).json({ message: "Missing refresh token" });
-
-    const { accessToken, refreshToken } = await refreshSession({
-      refreshToken: token,
-      req,
-    });
-
-    setRefreshCookie(res, refreshToken);
-
-    return res.json({ accessToken });
-  } catch (err: any) {
-    const status = Number(err?.status ?? 500);
-    if (status !== 500)
-      return res.status(status).json({ message: err.message });
-    return next(err);
-  }
-}
-
-export async function handleLogout(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const token = String(req.cookies?.refreshToken ?? "");
-    if (token) {
-      await logoutSession({ refreshToken: token });
+    if (!parsedBody.success) {
+        return res.status(400).json(handleZodError(parsedBody.error));
     }
 
-    clearRefreshCookie(res);
-    return res.json({ ok: true });
-  } catch (err) {
-    return next(err);
-  }
-}
+    return registerAuthService(parsedBody.data, getSessionMeta(req))
+        .then((result) => {
+            if (!result.ok) {
+                if (result.error.code === "EMAIL_ALREADY_IN_USE") {
+                    return res.status(409).json(result.error);
+                }
+
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(201).json(result.data);
+        })
+        .catch(next);
+};
+
+export const loginAuthController: RequestHandler = (req, res, next) => {
+    const parsedBody = loginSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+        return res.status(400).json(handleZodError(parsedBody.error));
+    }
+
+    return loginAuthService(parsedBody.data, getSessionMeta(req))
+        .then((result) => {
+            if (!result.ok) {
+                if (result.error.code === "INVALID_CREDENTIALS") {
+                    return res.status(401).json(result.error);
+                }
+
+                if (result.error.code === "USER_INACTIVE") {
+                    return res.status(403).json(result.error);
+                }
+
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(200).json(result.data);
+        })
+        .catch(next);
+};
+
+export const refreshAuthController: RequestHandler = (req, res, next) => {
+    const parsedBody = refreshTokenSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+        return res.status(400).json(handleZodError(parsedBody.error));
+    }
+
+    return refreshAuthService(parsedBody.data, getSessionMeta(req))
+        .then((result) => {
+            if (!result.ok) {
+                if (result.error.code === "INVALID_REFRESH_TOKEN") {
+                    return res.status(401).json(result.error);
+                }
+
+                if (result.error.code === "USER_NOT_FOUND") {
+                    return res.status(404).json(result.error);
+                }
+
+                if (result.error.code === "USER_INACTIVE") {
+                    return res.status(403).json(result.error);
+                }
+
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(200).json(result.data);
+        })
+        .catch(next);
+};
+
+export const logoutAuthController: RequestHandler = (req, res, next) => {
+    const parsedBody = logoutSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+        return res.status(400).json(handleZodError(parsedBody.error));
+    }
+
+    return logoutAuthService(parsedBody.data)
+        .then((result) => {
+            if (!result.ok) {
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(200).json(result.data);
+        })
+        .catch(next);
+};
+
+export const logoutAllAuthController: RequestHandler<
+    Record<string, never>,
+    object,
+    object,
+    object,
+    LocalsWithAuth
+> = (_req, res, next) => {
+    const auth = res.locals.auth;
+
+    if (!auth) {
+        return res.status(401).json({
+            code: "UNAUTHORIZED",
+            message: "Unauthorized",
+        });
+    }
+
+    return logoutAllAuthService(auth.id)
+        .then((result) => {
+            if (!result.ok) {
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(200).json(result.data);
+        })
+        .catch(next);
+};
+
+export const meAuthController: RequestHandler<
+    Record<string, never>,
+    object,
+    object,
+    object,
+    LocalsWithAuth
+> = (_req, res, next) => {
+    const auth = res.locals.auth;
+
+    if (!auth) {
+        return res.status(401).json({
+            code: "UNAUTHORIZED",
+            message: "Unauthorized",
+        });
+    }
+
+    return getCurrentAuthUserService(auth.id)
+        .then((result) => {
+            if (!result.ok) {
+                if (result.error.code === "USER_NOT_FOUND") {
+                    return res.status(404).json(result.error);
+                }
+
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(200).json(result.data);
+        })
+        .catch(next);
+};
+
+export const updateMeAuthController: RequestHandler<
+    Record<string, never>,
+    object,
+    object,
+    object,
+    LocalsWithAuth
+> = (req, res, next) => {
+    const auth = res.locals.auth;
+
+    if (!auth) {
+        return res.status(401).json({
+            code: "UNAUTHORIZED",
+            message: "Unauthorized",
+        });
+    }
+
+    const parsedBody = updateMeSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+        return res.status(400).json(handleZodError(parsedBody.error));
+    }
+
+    return updateMeAuthService(auth.id, parsedBody.data)
+        .then((result) => {
+            if (!result.ok) {
+                if (result.error.code === "USER_NOT_FOUND") {
+                    return res.status(404).json(result.error);
+                }
+
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(200).json(result.data);
+        })
+        .catch(next);
+};
+
+export const changePasswordAuthController: RequestHandler<
+    Record<string, never>,
+    object,
+    object,
+    object,
+    LocalsWithAuth
+> = (req, res, next) => {
+    const auth = res.locals.auth;
+
+    if (!auth) {
+        return res.status(401).json({
+            code: "UNAUTHORIZED",
+            message: "Unauthorized",
+        });
+    }
+
+    const parsedBody = changePasswordSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+        return res.status(400).json(handleZodError(parsedBody.error));
+    }
+
+    return changePasswordAuthService(auth.id, parsedBody.data)
+        .then((result) => {
+            if (!result.ok) {
+                if (result.error.code === "USER_NOT_FOUND") {
+                    return res.status(404).json(result.error);
+                }
+
+                if (result.error.code === "PASSWORD_MISMATCH") {
+                    return res.status(400).json(result.error);
+                }
+
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(200).json(result.data);
+        })
+        .catch(next);
+};
+
+export const forgotPasswordAuthController: RequestHandler = (req, res, next) => {
+    const parsedBody = forgotPasswordSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+        return res.status(400).json(handleZodError(parsedBody.error));
+    }
+
+    return forgotPasswordAuthService(parsedBody.data)
+        .then((result) => {
+            if (!result.ok) {
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(200).json(result.data);
+        })
+        .catch(next);
+};
+
+export const resetPasswordAuthController: RequestHandler = (req, res, next) => {
+    const parsedBody = resetPasswordSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+        return res.status(400).json(handleZodError(parsedBody.error));
+    }
+
+    return resetPasswordAuthService(parsedBody.data)
+        .then((result) => {
+            if (!result.ok) {
+                if (result.error.code === "INVALID_RESET_TOKEN") {
+                    return res.status(400).json(result.error);
+                }
+
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(200).json(result.data);
+        })
+        .catch(next);
+};
+
+export const verifyEmailAuthController: RequestHandler = (req, res, next) => {
+    const parsedBody = verifyEmailSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+        return res.status(400).json(handleZodError(parsedBody.error));
+    }
+
+    return verifyEmailAuthService(parsedBody.data)
+        .then((result) => {
+            if (!result.ok) {
+                if (result.error.code === "INVALID_VERIFICATION_TOKEN") {
+                    return res.status(400).json(result.error);
+                }
+
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(200).json(result.data);
+        })
+        .catch(next);
+};
+
+export const resendVerificationAuthController: RequestHandler = (req, res, next) => {
+    const parsedBody = resendVerificationSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+        return res.status(400).json(handleZodError(parsedBody.error));
+    }
+
+    return resendVerificationAuthService(parsedBody.data)
+        .then((result) => {
+            if (!result.ok) {
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(200).json(result.data);
+        })
+        .catch(next);
+};

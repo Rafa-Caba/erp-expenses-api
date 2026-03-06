@@ -1,33 +1,62 @@
-// src/users/types/user.types.ts
-
-import type { CurrencyCode } from "@/src/shared/types/common";
+export type UserRole = "USER" | "ADMIN";
 
 export interface UserEntity {
-  id: string;
-  name: string;
-  email: string;
-  passwordHash: string;
+    id: string;
+    fullName: string;
+    email: string;
+    passwordHash: string;
 
-  defaultCurrency: CurrencyCode;
-  timezone: string;
+    phone: string | null;
+    avatarUrl: string | null;
 
-  lastLoginAt: Date | null;
+    role: UserRole;
 
-  createdAt: Date;
-  updatedAt: Date;
+    isActive: boolean;
+    isEmailVerified: boolean;
+
+    emailVerificationTokenHash: string | null;
+    emailVerificationExpiresAt: Date | null;
+
+    passwordResetTokenHash: string | null;
+    passwordResetExpiresAt: Date | null;
+
+    lastLoginAt: Date | null;
+
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface PublicUserResponse {
+    id: string;
+    fullName: string;
+    email: string;
+    phone: string | null;
+    avatarUrl: string | null;
+    role: UserRole;
+    isActive: boolean;
+    isEmailVerified: boolean;
+    lastLoginAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
 }
 
 export type CreateUserInput = {
-  name: string;
-  email: string;
-  passwordHash: string;
-  defaultCurrency?: CurrencyCode;
-  timezone?: string;
+    fullName: string;
+    email: string;
+    password: string;
+    phone?: string | null;
+    avatarUrl?: string | null;
+    role?: UserRole;
+    isActive?: boolean;
+    isEmailVerified?: boolean;
 };
 
 export type UpdateUserInput = Partial<{
-  name: string;
-  defaultCurrency: CurrencyCode;
-  timezone: string;
-  lastLoginAt: Date | null;
+    fullName: string;
+    email: string;
+    phone: string | null;
+    avatarUrl: string | null;
+    role: UserRole;
+    isActive: boolean;
+    isEmailVerified: boolean;
 }>;

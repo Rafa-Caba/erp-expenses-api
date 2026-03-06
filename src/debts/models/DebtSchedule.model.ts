@@ -25,21 +25,26 @@ const DebtScheduleSchema = new Schema(
     status: {
       type: String,
       required: true,
-      enum: [
-        "pending",
-        "paid",
-        "overdue",
-        "skipped",
-      ] satisfies DebtScheduleStatus[],
+      enum: ["pending", "paid", "overdue", "skipped"] satisfies DebtScheduleStatus[],
       default: "pending",
       index: true,
     },
 
     paidAt: { type: Date, default: null },
+
+    // Existing link (transaction created when payment is registered)
     paidTransactionId: {
       type: Types.ObjectId,
       ref: "Transaction",
       default: null,
+    },
+
+    // ✅ NEW: link to the real payment record (DebtPayment)
+    debtPaymentId: {
+      type: Types.ObjectId,
+      ref: "DebtPayment",
+      default: null,
+      index: true,
     },
 
     createdByUserId: {
@@ -53,10 +58,7 @@ const DebtScheduleSchema = new Schema(
   { timestamps: true }
 );
 
-DebtScheduleSchema.index(
-  { workspaceId: 1, debtId: 1, dueDate: 1 },
-  { unique: false }
-);
+DebtScheduleSchema.index({ workspaceId: 1, debtId: 1, dueDate: 1 }, { unique: false });
 DebtScheduleSchema.index({ workspaceId: 1, status: 1, dueDate: 1 });
 
 applyToJsonTransform(DebtScheduleSchema);

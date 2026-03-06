@@ -94,8 +94,8 @@ Goal: Track personal debts and repayments.
 
 ### Debt Model
 
-* [ ] Debt schema
-* [ ] Debt CRUD
+* [x] Debt schema
+* [x] Debt CRUD
 
 Fields:
 
@@ -111,10 +111,10 @@ status
 
 ### Debt Payments
 
-* [ ] DebtPayment schema
-* [ ] Create payment endpoint
-* [ ] Auto-create ledger transaction
-* [ ] Update debt remaining balance
+* [x] DebtPayment schema
+* [x] Create payment endpoint
+* [x] Auto-create ledger transaction
+* [x] Update debt remaining balance
 
 ---
 
@@ -124,8 +124,8 @@ Goal: Support bills and recurring payments.
 
 ### Scheduled Items
 
-* [ ] ScheduledItem model
-* [ ] Recurrence rules
+* [x] ScheduledItem model
+* [x] Recurrence rules
 
 Examples:
 
@@ -137,9 +137,9 @@ custom interval
 
 ### Automation
 
-* [ ] Generate pending scheduled items
-* [ ] Bill reminders
-* [ ] Upcoming payments endpoint
+* [x] Generate pending scheduled items
+* [x] Bill reminders
+* [x] Upcoming payments endpoint
 
 ---
 

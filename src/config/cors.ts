@@ -5,7 +5,7 @@ import { getEnv } from "@/src/config/env";
 
 export function buildCorsOptions(): CorsOptions {
   const env = getEnv();
-  const origins = env.CORS_ORIGIN.split(",")
+  const origins = env.CORS_ORIGINS.split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 

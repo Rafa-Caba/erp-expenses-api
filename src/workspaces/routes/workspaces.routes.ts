@@ -15,6 +15,8 @@ import {
   handleUpdateMemberRole,
   handleDisableMember,
 } from "@/src/workspaces/controllers/workspaces.controller";
+import { debtsRouter } from "@/src/debts/routes/debts.routes";
+import { scheduledRouter } from "@/src/scheduled/routes/scheduled.routes";
 
 export const workspacesRouter = Router();
 
@@ -64,3 +66,9 @@ workspacesRouter.patch(
   requireRole("OWNER", "ADMIN"),
   handleDisableMember
 );
+
+// Debts Module
+workspacesRouter.use("/:workspaceId/debts", debtsRouter);
+
+// Scheduled Module
+workspacesRouter.use("/:workspaceId/scheduled", scheduledRouter);
