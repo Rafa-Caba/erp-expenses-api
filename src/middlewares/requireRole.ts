@@ -1,17 +1,29 @@
 // src/middlewares/requireRole.ts
 
 import type { NextFunction, Request, Response } from "express";
+
 import type { MemberRole } from "@/src/shared/types/common";
 
 export function requireRole(...roles: MemberRole[]) {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
     const role = req.workspaceMember?.role;
-    if (!role) return res.status(403).json({ message: "Forbidden" });
 
-    if (!roles.includes(role)) {
-      return res.status(403).json({ message: "Forbidden" });
+    if (!role) {
+      res.status(403).json({
+        code: "WORKSPACE_ROLE_MISSING",
+        message: "Forbidden",
+      });
+      return;
     }
 
-    return next();
+    if (!roles.includes(role)) {
+      res.status(403).json({
+        code: "WORKSPACE_ROLE_FORBIDDEN",
+        message: "Forbidden",
+      });
+      return;
+    }
+
+    next();
   };
 }

@@ -1,58 +1,103 @@
 // src/workspaces/models/WorkspaceMember.model.ts
 
-import mongoose, {
-  Schema,
-  type InferSchemaType,
-  type Model,
-  Types,
-} from "mongoose";
-import { applyToJsonTransform } from "@/src/shared/models/toJson";
+import { Schema, model, type Model, type Types } from "mongoose";
+
 import type { MemberRole, MemberStatus } from "@/src/shared/types/common";
+import {
+    workspacePermissionValues,
+    type WorkspacePermission,
+} from "@/src/shared/types/workspacePermissions";
 
-const WorkspaceMemberSchema = new Schema(
-  {
-    workspaceId: {
-      type: Types.ObjectId,
-      ref: "Workspace",
-      required: true,
-      index: true,
-    },
-    userId: { type: Types.ObjectId, ref: "User", required: true, index: true },
+export interface WorkspaceMemberDocument {
+    _id: Types.ObjectId;
+    workspaceId: Types.ObjectId;
+    userId: Types.ObjectId;
+    displayName: string;
+    role: MemberRole;
+    permissions?: WorkspacePermission[];
+    status: MemberStatus;
+    joinedAt?: Date | null;
+    invitedByUserId?: Types.ObjectId | null;
+    notes?: string | null;
+    isVisible?: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+}
 
-    role: {
-      type: String,
-      required: true,
-      enum: ["OWNER", "ADMIN", "MEMBER", "VIEWER"] satisfies MemberRole[],
+const workspaceMemberSchema = new Schema<WorkspaceMemberDocument>(
+    {
+        workspaceId: {
+            type: Schema.Types.ObjectId,
+            ref: "Workspace",
+            required: true,
+            index: true,
+        },
+        userId: {
+            type: Schema.Types.ObjectId,
+            ref: "User",
+            required: true,
+            index: true,
+        },
+        displayName: {
+            type: String,
+            required: true,
+            trim: true,
+            maxlength: 120,
+        },
+        role: {
+            type: String,
+            enum: ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+            required: true,
+            trim: true,
+        },
+        permissions: {
+            type: [
+                {
+                    type: String,
+                    enum: workspacePermissionValues,
+                },
+            ],
+            default: [],
+        },
+        status: {
+            type: String,
+            enum: ["active", "invited", "disabled"],
+            required: true,
+            default: "active",
+        },
+        joinedAt: {
+            type: Date,
+            default: null,
+        },
+        invitedByUserId: {
+            type: Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+        },
+        notes: {
+            type: String,
+            trim: true,
+            maxlength: 500,
+            default: null,
+        },
+        isVisible: {
+            type: Boolean,
+            default: true,
+        },
     },
-
-    status: {
-      type: String,
-      required: true,
-      enum: ["active", "invited", "disabled"] satisfies MemberStatus[],
-      default: "active",
-    },
-
-    createdByUserId: {
-      type: Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true,
-    },
-    updatedByUserId: { type: Types.ObjectId, ref: "User", default: null },
-  },
-  { timestamps: true }
+    {
+        timestamps: true,
+        versionKey: false,
+    }
 );
 
-// A user can have only one membership per workspace
-WorkspaceMemberSchema.index({ workspaceId: 1, userId: 1 }, { unique: true });
+workspaceMemberSchema.index({ workspaceId: 1, userId: 1 }, { unique: true });
+workspaceMemberSchema.index({ workspaceId: 1, role: 1 });
+workspaceMemberSchema.index({ workspaceId: 1, status: 1 });
 
-// Helpful for listing members
-WorkspaceMemberSchema.index({ workspaceId: 1, status: 1, role: 1 });
+export type WorkspaceMemberModelType = Model<WorkspaceMemberDocument>;
 
-applyToJsonTransform(WorkspaceMemberSchema);
-
-export type WorkspaceMemberDoc = InferSchemaType<typeof WorkspaceMemberSchema>;
-
-export const WorkspaceMemberModel: Model<WorkspaceMemberDoc> =
-  mongoose.models.WorkspaceMember ||
-  mongoose.model<WorkspaceMemberDoc>("WorkspaceMember", WorkspaceMemberSchema);
+export const WorkspaceMemberModel = model<
+    WorkspaceMemberDocument,
+    WorkspaceMemberModelType
+>("WorkspaceMember", workspaceMemberSchema);

@@ -33,7 +33,7 @@ export function createApp() {
   app.use("/api/users", userRouter);
 
   // Workspaces (existing)
-  // app.use("/api/workspaces", workspacesRouter);
+  app.use("/api/workspaces", workspacesRouter);
 
   // Workspace-scoped modules
   // app.use("/api/workspaces/:workspaceId/accounts", accountsRouter);

@@ -1,211 +1,253 @@
-// src/workspaces/services/workspaces.service.ts
+// src/workspaces/services/workspace.service.ts
 
-import mongoose from "mongoose";
+import { Types } from "mongoose";
 
-import { WorkspaceModel } from "@/src/workspaces/models/Workspace.model";
-import { WorkspaceMemberModel } from "@/src/workspaces/models/WorkspaceMember.model";
-import { UserModel } from "@/src/users/models/User.model";
+import { WorkspaceModel, type WorkspaceDocument } from "../models/Workspace.model";
+import { WorkspaceMemberModel } from "../models/WorkspaceMember.model";
+import type {
+    CreateWorkspaceServiceInput,
+    UpdateWorkspaceServiceInput,
+    WorkspaceListItemDto,
+    WorkspaceQueryOptions,
+    WorkspaceResponseDto,
+} from "../types/workspace.types";
 
-import type { MemberRole } from "@/src/shared/types/common";
+function normalizeOptionalString(value?: string): string | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
 
-type CreateWorkspaceInput = {
-  userId: string;
-  name: string;
-  kind: "SHARED" | "INDIVIDUAL";
-  currencyDefault: "MXN" | "USD";
-  timezone: string;
-};
-
-export async function createWorkspace(input: CreateWorkspaceInput) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
-    const workspace = await WorkspaceModel.create(
-      [
-        {
-          name: input.name,
-          kind: input.kind,
-          currencyDefault: input.currencyDefault,
-          timezone: input.timezone,
-          createdByUserId: input.userId,
-          updatedByUserId: null,
-          isActive: true,
-        },
-      ],
-      { session }
-    );
-
-    const created = workspace[0];
-
-    await WorkspaceMemberModel.create(
-      [
-        {
-          workspaceId: created._id,
-          userId: input.userId,
-          role: "OWNER",
-          status: "active",
-          createdByUserId: input.userId,
-          updatedByUserId: null,
-        },
-      ],
-      { session }
-    );
-
-    await session.commitTransaction();
-    return created;
-  } catch (err) {
-    await session.abortTransaction();
-    throw err;
-  } finally {
-    session.endSession();
-  }
+    const trimmedValue = value.trim();
+    return trimmedValue.length > 0 ? trimmedValue : undefined;
 }
 
-export async function listMyWorkspaces(userId: string) {
-  const memberships = await WorkspaceMemberModel.find({
-    userId,
-    status: "active",
-  }).select("workspaceId role");
-  const workspaceIds = memberships.map((m) => m.workspaceId);
-
-  const workspaces = await WorkspaceModel.find({
-    _id: { $in: workspaceIds },
-    isActive: true,
-  }).sort({ createdAt: -1 });
-
-  const roleByWorkspaceId = new Map<string, string>();
-  for (const m of memberships) {
-    roleByWorkspaceId.set(String(m.workspaceId), m.role);
-  }
-
-  return workspaces.map((w) => ({
-    ...w.toJSON(),
-    myRole: roleByWorkspaceId.get(String((w as any)._id ?? w.id)) ?? null,
-  }));
+function mapWorkspaceToDto(workspace: WorkspaceDocument): WorkspaceResponseDto {
+    return {
+        id: workspace._id.toString(),
+        type: workspace.type,
+        kind: workspace.kind,
+        name: workspace.name,
+        description: workspace.description ?? null,
+        ownerUserId: workspace.ownerUserId.toString(),
+        currency: workspace.currency,
+        timezone: workspace.timezone,
+        country: workspace.country ?? null,
+        icon: workspace.icon ?? null,
+        color: workspace.color ?? null,
+        visibility: workspace.visibility,
+        isActive: workspace.isActive,
+        isArchived: workspace.isArchived ?? false,
+        isVisible: workspace.isVisible ?? true,
+        createdAt: workspace.createdAt,
+        updatedAt: workspace.updatedAt,
+    };
 }
 
-export async function getWorkspace(workspaceId: string) {
-  const workspace = await WorkspaceModel.findById(workspaceId);
-  if (!workspace || !workspace.isActive) return null;
-  return workspace;
-}
-
-export async function listMembers(workspaceId: string) {
-  const members = await WorkspaceMemberModel.find({ workspaceId }).sort({
-    createdAt: 1,
-  });
-  return members;
-}
-
-export async function addMemberByEmail(params: {
-  workspaceId: string;
-  actorUserId: string;
-  role: MemberRole;
-  email: string;
-}) {
-  const workspace = await WorkspaceModel.findById(params.workspaceId);
-  if (!workspace || !workspace.isActive) {
-    const e = new Error("Workspace not found");
-    (e as any).status = 404;
-    throw e;
-  }
-
-  if (workspace.kind !== "SHARED") {
-    const e = new Error("Cannot add members to an INDIVIDUAL workspace");
-    (e as any).status = 400;
-    throw e;
-  }
-
-  const user = await UserModel.findOne({
-    email: params.email.toLowerCase().trim(),
-  });
-  if (!user) {
-    const e = new Error("User not found");
-    (e as any).status = 404;
-    throw e;
-  }
-
-  // Upsert membership (if exists, re-activate and update role)
-  const existing = await WorkspaceMemberModel.findOne({
-    workspaceId: params.workspaceId,
-    userId: user._id,
-  });
-
-  if (!existing) {
-    const created = await WorkspaceMemberModel.create({
-      workspaceId: params.workspaceId,
-      userId: user._id,
-      role: params.role,
-      status: "active",
-      createdByUserId: params.actorUserId,
-      updatedByUserId: null,
+async function createOwnerMembership(
+    workspaceId: Types.ObjectId,
+    ownerUserId: Types.ObjectId,
+    displayName: string
+): Promise<void> {
+    await WorkspaceMemberModel.create({
+        workspaceId,
+        userId: ownerUserId,
+        displayName,
+        role: "OWNER",
+        status: "active",
+        joinedAt: new Date(),
+        isVisible: true,
     });
-    return created;
-  }
-
-  existing.role = params.role;
-  existing.status = "active";
-  existing.updatedByUserId = new mongoose.Types.ObjectId(params.actorUserId);
-  await existing.save();
-
-  return existing;
 }
 
-export async function updateMemberRole(params: {
-  workspaceId: string;
-  memberId: string;
-  actorUserId: string;
-  role: MemberRole;
-}) {
-  const member = await WorkspaceMemberModel.findOne({
-    _id: params.memberId,
-    workspaceId: params.workspaceId,
-  });
-  if (!member) {
-    const e = new Error("Member not found");
-    (e as any).status = 404;
-    throw e;
-  }
+export async function createWorkspaceService(
+    input: CreateWorkspaceServiceInput
+): Promise<WorkspaceResponseDto> {
+    const { ownerUserId, body } = input;
 
-  // Prevent removing ownership by accident (service-level guard)
-  if (member.role === "OWNER" && params.role !== "OWNER") {
-    const e = new Error("Cannot change OWNER role");
-    (e as any).status = 400;
-    throw e;
-  }
+    const workspace = await WorkspaceModel.create({
+        type: body.type,
+        kind: body.kind ?? (body.type === "PERSONAL" ? "INDIVIDUAL" : "COLLABORATIVE"),
+        name: body.name.trim(),
+        description: normalizeOptionalString(body.description),
+        ownerUserId,
+        currency: body.currency,
+        timezone: body.timezone.trim(),
+        country: normalizeOptionalString(body.country),
+        icon: normalizeOptionalString(body.icon),
+        color: normalizeOptionalString(body.color),
+        visibility: body.visibility ?? "PRIVATE",
+        isActive: true,
+        isArchived: false,
+        isVisible: body.isVisible ?? true,
+    });
 
-  member.role = params.role;
-  member.updatedByUserId = new mongoose.Types.ObjectId(params.actorUserId);
-  await member.save();
+    await createOwnerMembership(workspace._id, ownerUserId, body.name.trim());
 
-  return member;
+    return mapWorkspaceToDto(workspace);
 }
 
-export async function disableMember(params: {
-  workspaceId: string;
-  memberId: string;
-  actorUserId: string;
-}) {
-  const member = await WorkspaceMemberModel.findOne({
-    _id: params.memberId,
-    workspaceId: params.workspaceId,
-  });
-  if (!member) {
-    const e = new Error("Member not found");
-    (e as any).status = 404;
-    throw e;
-  }
+export async function getWorkspacesService(
+    options: WorkspaceQueryOptions
+): Promise<WorkspaceListItemDto[]> {
+    const query: Record<string, boolean | Types.ObjectId> = {
+        ownerUserId: options.ownerUserId,
+    };
 
-  if (member.role === "OWNER") {
-    const e = new Error("Cannot disable OWNER");
-    (e as any).status = 400;
-    throw e;
-  }
+    if (!options.includeArchived) {
+        query.isArchived = false;
+    }
 
-  member.status = "disabled";
-  member.updatedByUserId = new mongoose.Types.ObjectId(params.actorUserId);
-  await member.save();
+    if (!options.includeInactive) {
+        query.isActive = true;
+    }
 
-  return member;
+    const workspaces = await WorkspaceModel.find(query).sort({ createdAt: -1 });
+
+    const workspaceIds = workspaces.map((workspace) => workspace._id);
+
+    const memberCountsRaw = await WorkspaceMemberModel.aggregate<{
+        _id: Types.ObjectId;
+        count: number;
+    }>([
+        {
+            $match: {
+                workspaceId: { $in: workspaceIds },
+            },
+        },
+        {
+            $group: {
+                _id: "$workspaceId",
+                count: { $sum: 1 },
+            },
+        },
+    ]);
+
+    const memberCountMap = new Map<string, number>(
+        memberCountsRaw.map((item) => [item._id.toString(), item.count])
+    );
+
+    return workspaces.map((workspace) => ({
+        ...mapWorkspaceToDto(workspace),
+        memberCount: memberCountMap.get(workspace._id.toString()) ?? 0,
+    }));
+}
+
+export async function getWorkspaceByIdService(
+    workspaceId: Types.ObjectId,
+    ownerUserId: Types.ObjectId
+): Promise<WorkspaceResponseDto | null> {
+    const workspace = await WorkspaceModel.findOne({
+        _id: workspaceId,
+        ownerUserId,
+    });
+
+    if (!workspace) {
+        return null;
+    }
+
+    return mapWorkspaceToDto(workspace);
+}
+
+export async function updateWorkspaceService(
+    input: UpdateWorkspaceServiceInput
+): Promise<WorkspaceResponseDto | null> {
+    const { workspaceId, ownerUserId, body } = input;
+
+    const updatePayload: Partial<WorkspaceDocument> = {};
+
+    if (body.type !== undefined) {
+        updatePayload.type = body.type;
+    }
+
+    if (body.kind !== undefined) {
+        updatePayload.kind = body.kind;
+    }
+
+    if (body.name !== undefined) {
+        updatePayload.name = body.name.trim();
+    }
+
+    if (body.description !== undefined) {
+        updatePayload.description = normalizeOptionalString(body.description) ?? null;
+    }
+
+    if (body.currency !== undefined) {
+        updatePayload.currency = body.currency;
+    }
+
+    if (body.timezone !== undefined) {
+        updatePayload.timezone = body.timezone.trim();
+    }
+
+    if (body.country !== undefined) {
+        updatePayload.country = normalizeOptionalString(body.country) ?? null;
+    }
+
+    if (body.icon !== undefined) {
+        updatePayload.icon = normalizeOptionalString(body.icon) ?? null;
+    }
+
+    if (body.color !== undefined) {
+        updatePayload.color = normalizeOptionalString(body.color) ?? null;
+    }
+
+    if (body.visibility !== undefined) {
+        updatePayload.visibility = body.visibility;
+    }
+
+    if (body.isActive !== undefined) {
+        updatePayload.isActive = body.isActive;
+    }
+
+    if (body.isArchived !== undefined) {
+        updatePayload.isArchived = body.isArchived;
+    }
+
+    if (body.isVisible !== undefined) {
+        updatePayload.isVisible = body.isVisible;
+    }
+
+    const workspace = await WorkspaceModel.findOneAndUpdate(
+        {
+            _id: workspaceId,
+            ownerUserId,
+        },
+        updatePayload,
+        {
+            new: true,
+            runValidators: true,
+        }
+    );
+
+    if (!workspace) {
+        return null;
+    }
+
+    return mapWorkspaceToDto(workspace);
+}
+
+export async function archiveWorkspaceService(
+    workspaceId: Types.ObjectId,
+    ownerUserId: Types.ObjectId
+): Promise<WorkspaceResponseDto | null> {
+    const workspace = await WorkspaceModel.findOneAndUpdate(
+        {
+            _id: workspaceId,
+            ownerUserId,
+        },
+        {
+            isArchived: true,
+            isActive: false,
+        },
+        {
+            new: true,
+            runValidators: true,
+        }
+    );
+
+    if (!workspace) {
+        return null;
+    }
+
+    return mapWorkspaceToDto(workspace);
 }

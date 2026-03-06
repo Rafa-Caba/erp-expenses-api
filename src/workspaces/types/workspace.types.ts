@@ -1,39 +1,86 @@
 // src/workspaces/types/workspace.types.ts
 
+import type { ParamsDictionary } from "express-serve-static-core";
+import type { Types } from "mongoose";
+
 import type {
-  CurrencyCode,
-  MemberRole,
-  MemberStatus,
-  WorkspaceKind,
+    CurrencyCode,
+    WorkspaceKind,
+    WorkspaceType,
+    WorkspaceVisibility,
 } from "@/src/shared/types/common";
 
-export interface WorkspaceEntity {
-  id: string;
-  name: string;
-  kind: WorkspaceKind;
-  currencyDefault: CurrencyCode;
-  timezone: string;
-
-  createdByUserId: string;
-  updatedByUserId: string | null;
-
-  isActive: boolean;
-
-  createdAt: Date;
-  updatedAt: Date;
+export interface CreateWorkspaceBody {
+    type: WorkspaceType;
+    kind?: WorkspaceKind;
+    name: string;
+    description?: string;
+    currency: CurrencyCode;
+    timezone: string;
+    country?: string;
+    icon?: string;
+    color?: string;
+    visibility?: WorkspaceVisibility;
+    isVisible?: boolean;
 }
 
-export interface WorkspaceMemberEntity {
-  id: string;
-  workspaceId: string;
-  userId: string;
+export interface UpdateWorkspaceBody {
+    type?: WorkspaceType;
+    kind?: WorkspaceKind;
+    name?: string;
+    description?: string;
+    currency?: CurrencyCode;
+    timezone?: string;
+    country?: string;
+    icon?: string;
+    color?: string;
+    visibility?: WorkspaceVisibility;
+    isActive?: boolean;
+    isArchived?: boolean;
+    isVisible?: boolean;
+}
 
-  role: MemberRole;
-  status: MemberStatus;
+export interface WorkspaceParams extends ParamsDictionary {
+    workspaceId: string;
+}
 
-  createdByUserId: string;
-  updatedByUserId: string | null;
+export interface WorkspaceResponseDto {
+    id: string;
+    type: WorkspaceType;
+    kind: WorkspaceKind;
+    name: string;
+    description: string | null;
+    ownerUserId: string;
+    currency: CurrencyCode;
+    timezone: string;
+    country: string | null;
+    icon: string | null;
+    color: string | null;
+    visibility: WorkspaceVisibility;
+    isActive: boolean;
+    isArchived: boolean;
+    isVisible: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+}
 
-  createdAt: Date;
-  updatedAt: Date;
+export interface WorkspaceListItemDto extends WorkspaceResponseDto {
+    memberCount?: number;
+}
+
+export interface CreateWorkspaceServiceInput {
+    ownerUserId: Types.ObjectId;
+    body: CreateWorkspaceBody;
+}
+
+export interface UpdateWorkspaceServiceInput {
+    workspaceId: Types.ObjectId;
+    ownerUserId: Types.ObjectId;
+    body: UpdateWorkspaceBody;
+}
+
+export interface WorkspaceQueryOptions {
+    ownerUserId: Types.ObjectId;
+    includeArchived?: boolean;
+    includeInactive?: boolean;
 }

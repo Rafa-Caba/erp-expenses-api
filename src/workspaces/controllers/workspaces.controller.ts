@@ -1,211 +1,194 @@
-// src/workspaces/controllers/workspaces.controller.ts
+// src/workspaces/controllers/workspace.controller.ts
 
-import type { Request, Response, NextFunction } from "express";
-import mongoose from "mongoose";
+import type { RequestHandler } from "express";
+import { Types } from "mongoose";
 
 import {
-  CreateWorkspaceSchema,
-  AddMemberByEmailSchema,
-  UpdateMemberRoleSchema,
-} from "@/src/workspaces/schemas/workspace.schemas";
-import {
-  createWorkspace,
-  listMyWorkspaces,
-  getWorkspace,
-  listMembers,
-  addMemberByEmail,
-  updateMemberRole,
-  disableMember,
-} from "@/src/workspaces/services/workspaces.service";
+    archiveWorkspaceService,
+    createWorkspaceService,
+    getWorkspaceByIdService,
+    getWorkspacesService,
+    updateWorkspaceService,
+} from "../services/workspaces.service";
+import type {
+    CreateWorkspaceBody,
+    UpdateWorkspaceBody,
+    WorkspaceParams,
+} from "../types/workspace.types";
 
-export async function handleCreateWorkspace(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ message: "Unauthorized" });
-
-    const parsed = CreateWorkspaceSchema.safeParse(req.body);
-    if (!parsed.success)
-      return res
-        .status(400)
-        .json({ message: "Invalid body", issues: parsed.error.issues });
-
-    const workspace = await createWorkspace({
-      userId,
-      name: parsed.data.name,
-      kind: parsed.data.kind,
-      currencyDefault: parsed.data.currencyDefault,
-      timezone: parsed.data.timezone,
-    });
-
-    return res.status(201).json(workspace.toJSON());
-  } catch (err) {
-    return next(err);
-  }
-}
-
-export async function handleListMyWorkspaces(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ message: "Unauthorized" });
-
-    const list = await listMyWorkspaces(userId);
-    return res.json(list);
-  } catch (err) {
-    return next(err);
-  }
-}
-
-export async function handleGetWorkspace(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const workspaceId = String(req.params.workspaceId ?? "");
-    if (!mongoose.isValidObjectId(workspaceId)) {
-      return res.status(400).json({ message: "Invalid workspaceId" });
+function getObjectIdOrThrow(value: string): Types.ObjectId {
+    if (!Types.ObjectId.isValid(value)) {
+        throw new Error("Invalid ObjectId.");
     }
 
-    const workspace = await getWorkspace(workspaceId);
-    if (!workspace)
-      return res.status(404).json({ message: "Workspace not found" });
-
-    // Access is already validated by middleware
-    return res.json(workspace.toJSON());
-  } catch (err) {
-    return next(err);
-  }
+    return new Types.ObjectId(value);
 }
 
-export async function handleListMembers(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const workspaceId = String(req.params.workspaceId ?? "");
-    if (!mongoose.isValidObjectId(workspaceId)) {
-      return res.status(400).json({ message: "Invalid workspaceId" });
+export const createWorkspaceController: RequestHandler<
+    Record<string, never>,
+    object,
+    CreateWorkspaceBody
+> = async (req, res, next): Promise<void> => {
+    try {
+        if (!req.user?.id) {
+            res.status(401).json({
+                code: "UNAUTHORIZED",
+                message: "Unauthorized",
+            });
+            return;
+        }
+
+        const ownerUserId = getObjectIdOrThrow(req.user.id);
+
+        const workspace = await createWorkspaceService({
+            ownerUserId,
+            body: req.body,
+        });
+
+        res.status(201).json({
+            message: "Workspace creado correctamente.",
+            workspace,
+        });
+    } catch (error) {
+        next(error);
     }
+};
 
-    const members = await listMembers(workspaceId);
-    return res.json(members.map((m) => m.toJSON()));
-  } catch (err) {
-    return next(err);
-  }
-}
+export const getWorkspacesController: RequestHandler = async (
+    req,
+    res,
+    next
+): Promise<void> => {
+    try {
+        if (!req.user?.id) {
+            res.status(401).json({
+                code: "UNAUTHORIZED",
+                message: "Unauthorized",
+            });
+            return;
+        }
 
-export async function handleAddMemberByEmail(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const actorUserId = req.user?.id;
-    if (!actorUserId) return res.status(401).json({ message: "Unauthorized" });
+        const ownerUserId = getObjectIdOrThrow(req.user.id);
 
-    const workspaceId = String(req.params.workspaceId ?? "");
-    if (!mongoose.isValidObjectId(workspaceId)) {
-      return res.status(400).json({ message: "Invalid workspaceId" });
+        const includeArchived = req.query.includeArchived === "true";
+        const includeInactive = req.query.includeInactive === "true";
+
+        const workspaces = await getWorkspacesService({
+            ownerUserId,
+            includeArchived,
+            includeInactive,
+        });
+
+        res.status(200).json({
+            message: "Workspaces obtenidos correctamente.",
+            workspaces,
+        });
+    } catch (error) {
+        next(error);
     }
+};
 
-    const parsed = AddMemberByEmailSchema.safeParse(req.body);
-    if (!parsed.success)
-      return res
-        .status(400)
-        .json({ message: "Invalid body", issues: parsed.error.issues });
+export const getWorkspaceByIdController: RequestHandler<
+    WorkspaceParams
+> = async (req, res, next): Promise<void> => {
+    try {
+        if (!req.user?.id) {
+            res.status(401).json({
+                code: "UNAUTHORIZED",
+                message: "Unauthorized",
+            });
+            return;
+        }
 
-    const created = await addMemberByEmail({
-      workspaceId,
-      actorUserId,
-      role: parsed.data.role,
-      email: parsed.data.email,
-    });
+        const ownerUserId = getObjectIdOrThrow(req.user.id);
+        const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
 
-    return res.status(201).json(created.toJSON());
-  } catch (err: any) {
-    const status = Number(err?.status ?? 500);
-    if (status !== 500)
-      return res.status(status).json({ message: err.message });
-    return next(err);
-  }
-}
+        const workspace = await getWorkspaceByIdService(workspaceId, ownerUserId);
 
-export async function handleUpdateMemberRole(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const actorUserId = req.user?.id;
-    if (!actorUserId) return res.status(401).json({ message: "Unauthorized" });
+        if (!workspace) {
+            res.status(404).json({
+                message: "Workspace no encontrado.",
+            });
+            return;
+        }
 
-    const workspaceId = String(req.params.workspaceId ?? "");
-    const memberId = String(req.params.memberId ?? "");
-
-    if (
-      !mongoose.isValidObjectId(workspaceId) ||
-      !mongoose.isValidObjectId(memberId)
-    ) {
-      return res.status(400).json({ message: "Invalid ids" });
+        res.status(200).json({
+            message: "Workspace obtenido correctamente.",
+            workspace,
+        });
+    } catch (error) {
+        next(error);
     }
+};
 
-    const parsed = UpdateMemberRoleSchema.safeParse(req.body);
-    if (!parsed.success)
-      return res
-        .status(400)
-        .json({ message: "Invalid body", issues: parsed.error.issues });
+export const updateWorkspaceController: RequestHandler<
+    WorkspaceParams,
+    object,
+    UpdateWorkspaceBody
+> = async (req, res, next): Promise<void> => {
+    try {
+        if (!req.user?.id) {
+            res.status(401).json({
+                code: "UNAUTHORIZED",
+                message: "Unauthorized",
+            });
+            return;
+        }
 
-    const updated = await updateMemberRole({
-      workspaceId,
-      memberId,
-      actorUserId,
-      role: parsed.data.role,
-    });
+        const ownerUserId = getObjectIdOrThrow(req.user.id);
+        const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
 
-    return res.json(updated.toJSON());
-  } catch (err: any) {
-    const status = Number(err?.status ?? 500);
-    if (status !== 500)
-      return res.status(status).json({ message: err.message });
-    return next(err);
-  }
-}
+        const workspace = await updateWorkspaceService({
+            workspaceId,
+            ownerUserId,
+            body: req.body,
+        });
 
-export async function handleDisableMember(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const actorUserId = req.user?.id;
-    if (!actorUserId) return res.status(401).json({ message: "Unauthorized" });
+        if (!workspace) {
+            res.status(404).json({
+                message: "Workspace no encontrado.",
+            });
+            return;
+        }
 
-    const workspaceId = String(req.params.workspaceId ?? "");
-    const memberId = String(req.params.memberId ?? "");
-
-    if (
-      !mongoose.isValidObjectId(workspaceId) ||
-      !mongoose.isValidObjectId(memberId)
-    ) {
-      return res.status(400).json({ message: "Invalid ids" });
+        res.status(200).json({
+            message: "Workspace actualizado correctamente.",
+            workspace,
+        });
+    } catch (error) {
+        next(error);
     }
+};
 
-    const updated = await disableMember({ workspaceId, memberId, actorUserId });
+export const archiveWorkspaceController: RequestHandler<
+    WorkspaceParams
+> = async (req, res, next): Promise<void> => {
+    try {
+        if (!req.user?.id) {
+            res.status(401).json({
+                code: "UNAUTHORIZED",
+                message: "Unauthorized",
+            });
+            return;
+        }
 
-    return res.json(updated.toJSON());
-  } catch (err: any) {
-    const status = Number(err?.status ?? 500);
-    if (status !== 500)
-      return res.status(status).json({ message: err.message });
-    return next(err);
-  }
-}
+        const ownerUserId = getObjectIdOrThrow(req.user.id);
+        const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
+
+        const workspace = await archiveWorkspaceService(workspaceId, ownerUserId);
+
+        if (!workspace) {
+            res.status(404).json({
+                message: "Workspace no encontrado.",
+            });
+            return;
+        }
+
+        res.status(200).json({
+            message: "Workspace archivado correctamente.",
+            workspace,
+        });
+    } catch (error) {
+        next(error);
+    }
+};

@@ -2,12 +2,12 @@
 
 export type CurrencyCode = "MXN" | "USD";
 
-export type WorkspaceKind = "SHARED" | "INDIVIDUAL";
+export type WorkspaceType = "PERSONAL" | "HOUSEHOLD" | "BUSINESS";
+export type WorkspaceVisibility = "PRIVATE" | "SHARED";
+export type WorkspaceKind = "INDIVIDUAL" | "COLLABORATIVE";
 
 export type MemberRole = "OWNER" | "ADMIN" | "MEMBER" | "VIEWER";
 export type MemberStatus = "active" | "invited" | "disabled";
-
-export type Visibility = "shared" | "private";
 
 export type AccountType = "cash" | "debit" | "credit" | "wallet";
 
@@ -20,4 +20,5 @@ export type TransactionType =
   | "debt_payment"
   | "transfer"
   | "adjustment";
+
 export type TransactionDirection = "in" | "out";

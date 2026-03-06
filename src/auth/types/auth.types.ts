@@ -127,3 +127,13 @@ export interface ChangePasswordResponse extends MessageResponse {
 export interface LogoutResponse extends MessageResponse { }
 
 export interface LogoutAllResponse extends MessageResponse { }
+
+export interface AuthenticatedUser {
+	id: string;
+	email: string;
+	role: UserRole;
+}
+
+export type AuthenticatedLocals = {
+	auth?: AuthenticatedUser;
+};

@@ -1,57 +1,133 @@
 // src/workspaces/models/Workspace.model.ts
 
-import mongoose, {
-  Schema,
-  type InferSchemaType,
-  type Model,
-  Types,
-} from "mongoose";
-import { applyToJsonTransform } from "@/src/shared/models/toJson";
-import type { CurrencyCode, WorkspaceKind } from "@/src/shared/types/common";
+import { Schema, model, type Model, type Types } from "mongoose";
 
-const WorkspaceSchema = new Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-      minlength: 2,
-      maxlength: 120,
+import type {
+    CurrencyCode,
+    WorkspaceKind,
+    WorkspaceType,
+    WorkspaceVisibility,
+} from "@/src/shared/types/common";
+
+export interface WorkspaceDocument {
+    _id: Types.ObjectId;
+    type: WorkspaceType;
+    kind: WorkspaceKind;
+    name: string;
+    description?: string | null;
+    ownerUserId: Types.ObjectId;
+    currency: CurrencyCode;
+    timezone: string;
+    country?: string | null;
+    icon?: string | null;
+    color?: string | null;
+    visibility: WorkspaceVisibility;
+    isActive: boolean;
+    isArchived?: boolean;
+    isVisible?: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+const workspaceSchema = new Schema<WorkspaceDocument>(
+    {
+        type: {
+            type: String,
+            enum: ["PERSONAL", "HOUSEHOLD", "BUSINESS"],
+            required: true,
+            trim: true,
+        },
+        kind: {
+            type: String,
+            enum: ["INDIVIDUAL", "COLLABORATIVE"],
+            required: true,
+            default: "INDIVIDUAL",
+            trim: true,
+        },
+        name: {
+            type: String,
+            required: true,
+            trim: true,
+            maxlength: 120,
+        },
+        description: {
+            type: String,
+            trim: true,
+            maxlength: 500,
+            default: null,
+        },
+        ownerUserId: {
+            type: Schema.Types.ObjectId,
+            ref: "User",
+            required: true,
+            index: true,
+        },
+        currency: {
+            type: String,
+            enum: ["MXN", "USD"],
+            required: true,
+            trim: true,
+        },
+        timezone: {
+            type: String,
+            required: true,
+            trim: true,
+            maxlength: 100,
+        },
+        country: {
+            type: String,
+            trim: true,
+            maxlength: 100,
+            default: null,
+        },
+        icon: {
+            type: String,
+            trim: true,
+            maxlength: 100,
+            default: null,
+        },
+        color: {
+            type: String,
+            trim: true,
+            maxlength: 30,
+            default: null,
+        },
+        visibility: {
+            type: String,
+            enum: ["PRIVATE", "SHARED"],
+            required: true,
+            default: "PRIVATE",
+            trim: true,
+        },
+        isActive: {
+            type: Boolean,
+            default: true,
+            required: true,
+        },
+        isArchived: {
+            type: Boolean,
+            default: false,
+        },
+        isVisible: {
+            type: Boolean,
+            default: true,
+        },
     },
-
-    kind: {
-      type: String,
-      required: true,
-      enum: ["SHARED", "INDIVIDUAL"],
-    },
-
-    currencyDefault: {
-      type: String,
-      required: true,
-      enum: ["MXN", "USD"],
-      default: "MXN" satisfies CurrencyCode,
-    },
-    timezone: { type: String, required: true, default: "America/Mexico_City" },
-
-    createdByUserId: {
-      type: Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true,
-    },
-    updatedByUserId: { type: Types.ObjectId, ref: "User", default: null },
-
-    isActive: { type: Boolean, required: true, default: true },
-  },
-  { timestamps: true }
+    {
+        timestamps: true,
+        versionKey: false,
+    }
 );
 
-WorkspaceSchema.index({ createdByUserId: 1, createdAt: -1 });
+workspaceSchema.index({ ownerUserId: 1, isActive: 1 });
+workspaceSchema.index({ ownerUserId: 1, type: 1 });
+workspaceSchema.index({ ownerUserId: 1, kind: 1 });
+workspaceSchema.index({ ownerUserId: 1, visibility: 1 });
+workspaceSchema.index({ isArchived: 1 });
 
-applyToJsonTransform(WorkspaceSchema);
+export type WorkspaceModelType = Model<WorkspaceDocument>;
 
-export type WorkspaceDoc = InferSchemaType<typeof WorkspaceSchema>;
-
-export const WorkspaceModel: Model<WorkspaceDoc> =
-  mongoose.models.Workspace ||
-  mongoose.model<WorkspaceDoc>("Workspace", WorkspaceSchema);
+export const WorkspaceModel = model<WorkspaceDocument, WorkspaceModelType>(
+    "Workspace",
+    workspaceSchema
+);

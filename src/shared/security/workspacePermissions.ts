@@ -1,15 +1,59 @@
 // src/shared/security/workspacePermissions.ts
 
-import type { WorkspaceKind, WorkspaceRole } from "@/src/types/express";
-import { isPrivilegedRole } from "@/src/shared/security/visibility";
+import type { MemberRole, WorkspaceKind } from "@/src/shared/types/common";
+import type { WorkspacePermission } from "@/src/shared/types/workspacePermissions";
+
+export function isPrivilegedWorkspaceRole(role: MemberRole): boolean {
+    return role === "OWNER" || role === "ADMIN";
+}
+
+export function hasWorkspacePermission(input: {
+    workspaceKind: WorkspaceKind;
+    role: MemberRole;
+    grantedPermissions?: WorkspacePermission[];
+    requiredPermission: WorkspacePermission;
+}): boolean {
+    if (input.workspaceKind === "INDIVIDUAL") {
+        return true;
+    }
+
+    if (isPrivilegedWorkspaceRole(input.role)) {
+        return true;
+    }
+
+    const grantedPermissions = input.grantedPermissions ?? [];
+
+    return grantedPermissions.includes(input.requiredPermission);
+}
+
+export function hasAnyWorkspacePermission(input: {
+    workspaceKind: WorkspaceKind;
+    role: MemberRole;
+    grantedPermissions?: WorkspacePermission[];
+    requiredPermissions: WorkspacePermission[];
+}): boolean {
+    if (input.workspaceKind === "INDIVIDUAL") {
+        return true;
+    }
+
+    if (isPrivilegedWorkspaceRole(input.role)) {
+        return true;
+    }
+
+    const grantedPermissions = input.grantedPermissions ?? [];
+
+    return input.requiredPermissions.some((permission) =>
+        grantedPermissions.includes(permission)
+    );
+}
 
 export function canManageWorkspaceResources(input: {
     workspaceKind: WorkspaceKind;
-    role: WorkspaceRole;
+    role: MemberRole;
 }): boolean {
-    // INDIVIDUAL: only owner exists (or should), allow.
-    if (input.workspaceKind === "INDIVIDUAL") return true;
+    if (input.workspaceKind === "INDIVIDUAL") {
+        return true;
+    }
 
-    // SHARED: only OWNER/ADMIN can mutate resources.
-    return isPrivilegedRole(input.role);
+    return isPrivilegedWorkspaceRole(input.role);
 }

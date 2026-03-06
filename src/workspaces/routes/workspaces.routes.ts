@@ -2,73 +2,57 @@
 
 import { Router } from "express";
 
-import { requireAuth } from "@/src/middlewares/requireAuth";
-import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
-import { requireRole } from "@/src/middlewares/requireRole";
-
 import {
-  handleCreateWorkspace,
-  handleListMyWorkspaces,
-  handleGetWorkspace,
-  handleListMembers,
-  handleAddMemberByEmail,
-  handleUpdateMemberRole,
-  handleDisableMember,
-} from "@/src/workspaces/controllers/workspaces.controller";
-import { debtsRouter } from "@/src/debts/routes/debts.routes";
-import { scheduledRouter } from "@/src/scheduled/routes/scheduled.routes";
+    archiveWorkspaceController,
+    createWorkspaceController,
+    getWorkspaceByIdController,
+    getWorkspacesController,
+    updateWorkspaceController,
+} from "../controllers/workspaces.controller";
+import {
+    createWorkspaceSchema,
+    updateWorkspaceSchema,
+    workspaceParamsSchema,
+} from "../schemas/workspace.schemas";
+import type {
+    UpdateWorkspaceBody,
+    WorkspaceParams,
+} from "../types/workspace.types";
+import { workspaceMemberRouter } from "./workspaceMember.routes";
+import { validateRequest } from "@/src/middlewares/validateRequest";
+import { verifyToken } from "@/src/middlewares/verifyToken";
 
-export const workspacesRouter = Router();
+const workspacesRouter = Router();
 
-// All routes require auth
-workspacesRouter.use(requireAuth);
+workspacesRouter.use(verifyToken);
 
-// My workspaces
-workspacesRouter.get("/", handleListMyWorkspaces);
+workspacesRouter.use("/:workspaceId/members", workspaceMemberRouter);
 
-// Create workspace
-workspacesRouter.post("/", handleCreateWorkspace);
+workspacesRouter.get("/", getWorkspacesController);
 
-// Workspace detail (must be member)
-workspacesRouter.get(
-  "/:workspaceId",
-  requireWorkspaceAccess("workspaceId"),
-  handleGetWorkspace
+workspacesRouter.get<WorkspaceParams>(
+    "/:workspaceId",
+    validateRequest(workspaceParamsSchema),
+    getWorkspaceByIdController
 );
 
-// Members
-workspacesRouter.get(
-  "/:workspaceId/members",
-  requireWorkspaceAccess("workspaceId"),
-  handleListMembers
-);
-
-// Add member (SHARED only at service-level), only OWNER/ADMIN
 workspacesRouter.post(
-  "/:workspaceId/members",
-  requireWorkspaceAccess("workspaceId"),
-  requireRole("OWNER", "ADMIN"),
-  handleAddMemberByEmail
+    "/",
+    validateRequest(createWorkspaceSchema),
+    createWorkspaceController
 );
 
-// Update member role (OWNER/ADMIN)
-workspacesRouter.patch(
-  "/:workspaceId/members/:memberId/role",
-  requireWorkspaceAccess("workspaceId"),
-  requireRole("OWNER", "ADMIN"),
-  handleUpdateMemberRole
+workspacesRouter.patch<WorkspaceParams, object, UpdateWorkspaceBody>(
+    "/:workspaceId",
+    validateRequest(workspaceParamsSchema),
+    validateRequest(updateWorkspaceSchema),
+    updateWorkspaceController
 );
 
-// Disable member (OWNER/ADMIN)
-workspacesRouter.patch(
-  "/:workspaceId/members/:memberId/disable",
-  requireWorkspaceAccess("workspaceId"),
-  requireRole("OWNER", "ADMIN"),
-  handleDisableMember
+workspacesRouter.delete<WorkspaceParams>(
+    "/:workspaceId",
+    validateRequest(workspaceParamsSchema),
+    archiveWorkspaceController
 );
 
-// Debts Module
-workspacesRouter.use("/:workspaceId/debts", debtsRouter);
-
-// Scheduled Module
-workspacesRouter.use("/:workspaceId/scheduled", scheduledRouter);
+export { workspacesRouter };
