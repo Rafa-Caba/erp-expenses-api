@@ -1,26 +1,69 @@
 // src/categories/routes/categories.routes.ts
 
 import { Router } from "express";
-import { requireAuth } from "@/src/middlewares/requireAuth";
-import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
+
 import {
-    handleCreateCategory,
-    handleDisableCategory,
-    handleEnableCategory,
-    handleGetCategory,
-    handleListCategories,
-    handlePatchCategory,
-} from "@/src/categories/controllers/categories.controller";
+    archiveCategoryController,
+    createCategoryController,
+    getCategoriesController,
+    getCategoryByIdController,
+    updateCategoryController,
+} from "../controllers/categories.controller";
+import {
+    categoryParamsSchema,
+    createCategorySchema,
+    updateCategorySchema,
+    workspaceCategoryParamsSchema,
+} from "../schemas/category.schemas";
+import type {
+    CategoryParams,
+    CreateCategoryBody,
+    UpdateCategoryBody,
+    WorkspaceCategoryParams,
+} from "../types/category.types";
+import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
+import { requireWorkspacePermission } from "@/src/middlewares/requireWorkspacePermission";
+import { validateRequest } from "@/src/middlewares/validateRequest";
 
-export const categoriesRouter = Router({ mergeParams: true });
+const categoryRouter = Router({ mergeParams: true });
 
-categoriesRouter.use(requireAuth);
-categoriesRouter.use(requireWorkspaceAccess("workspaceId"));
+categoryRouter.use(requireWorkspaceAccess());
 
-categoriesRouter.get("/", handleListCategories);
-categoriesRouter.post("/", handleCreateCategory);
+categoryRouter.get<WorkspaceCategoryParams>(
+    "/",
+    validateRequest(workspaceCategoryParamsSchema),
+    requireWorkspacePermission("categories.read"),
+    getCategoriesController
+);
 
-categoriesRouter.get("/:categoryId", handleGetCategory);
-categoriesRouter.patch("/:categoryId", handlePatchCategory);
-categoriesRouter.patch("/:categoryId/disable", handleDisableCategory);
-categoriesRouter.patch("/:categoryId/enable", handleEnableCategory);
+categoryRouter.get<CategoryParams>(
+    "/:categoryId",
+    validateRequest(categoryParamsSchema),
+    requireWorkspacePermission("categories.read"),
+    getCategoryByIdController
+);
+
+categoryRouter.post<WorkspaceCategoryParams, object, CreateCategoryBody>(
+    "/",
+    validateRequest(workspaceCategoryParamsSchema),
+    validateRequest(createCategorySchema),
+    requireWorkspacePermission("categories.create"),
+    createCategoryController
+);
+
+categoryRouter.patch<CategoryParams, object, UpdateCategoryBody>(
+    "/:categoryId",
+    validateRequest(categoryParamsSchema),
+    validateRequest(updateCategorySchema),
+    requireWorkspacePermission("categories.update"),
+    updateCategoryController
+);
+
+categoryRouter.delete<CategoryParams>(
+    "/:categoryId",
+    validateRequest(categoryParamsSchema),
+    requireWorkspacePermission("categories.delete"),
+    archiveCategoryController
+);
+
+export { categoryRouter };

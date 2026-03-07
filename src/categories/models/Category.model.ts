@@ -1,35 +1,118 @@
 // src/categories/models/Category.model.ts
 
-import mongoose, { Schema, type InferSchemaType, type Model } from "mongoose";
-import { applyToJsonTransform } from "@/src/shared/models/toJson";
+import { Schema, model, type Model, type Types } from "mongoose";
 
-const CategorySchema = new Schema(
-  {
-    workspaceId: { type: Schema.Types.ObjectId, ref: "Workspace", required: true, index: true },
+import type { CategoryType } from "@/src/categories/types/category.types";
+import { CATEGORY_TYPES } from "@/src/categories/types/category.types";
 
-    name: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
+export interface CategoryDocument {
+    _id: Types.ObjectId;
+    workspaceId: Types.ObjectId;
+    name: string;
+    type: CategoryType;
+    parentCategoryId?: Types.ObjectId | null;
+    color?: string | null;
+    icon?: string | null;
+    description?: string | null;
+    sortOrder?: number;
+    isSystem?: boolean;
+    isActive: boolean;
+    isVisible?: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+}
 
-    type: { type: String, required: true, enum: ["INCOME", "EXPENSE"], index: true },
+const HEX_COLOR_REGEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
-    color: { type: String, default: null },
-    iconKey: { type: String, default: null },
+const categorySchema = new Schema<CategoryDocument>(
+    {
+        workspaceId: {
+            type: Schema.Types.ObjectId,
+            ref: "Workspace",
+            required: true,
+            index: true,
+        },
+        name: {
+            type: String,
+            required: true,
+            trim: true,
+            maxlength: 120,
+        },
+        type: {
+            type: String,
+            enum: CATEGORY_TYPES,
+            required: true,
+            trim: true,
+        },
+        parentCategoryId: {
+            type: Schema.Types.ObjectId,
+            ref: "Category",
+            default: null,
+            index: true,
+        },
+        color: {
+            type: String,
+            trim: true,
+            maxlength: 30,
+            default: null,
+            validate: {
+                validator(value: string | null): boolean {
+                    if (value === null) {
+                        return true;
+                    }
 
-    isActive: { type: Boolean, default: true, index: true },
-
-    note: { type: String, default: null },
-
-    createdByUserId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    updatedByUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
-  },
-  { timestamps: true }
+                    return HEX_COLOR_REGEX.test(value);
+                },
+                message: "El color debe ser un hexadecimal válido.",
+            },
+        },
+        icon: {
+            type: String,
+            trim: true,
+            maxlength: 100,
+            default: null,
+        },
+        description: {
+            type: String,
+            trim: true,
+            maxlength: 500,
+            default: null,
+        },
+        sortOrder: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        isSystem: {
+            type: Boolean,
+            default: false,
+        },
+        isActive: {
+            type: Boolean,
+            default: true,
+            required: true,
+        },
+        isVisible: {
+            type: Boolean,
+            default: true,
+        },
+    },
+    {
+        timestamps: true,
+        versionKey: false,
+    }
 );
 
-CategorySchema.index({ workspaceId: 1, type: 1, name: 1 }, { unique: true });
-CategorySchema.index({ workspaceId: 1, isActive: 1, type: 1, name: 1 });
+categorySchema.index({ workspaceId: 1, name: 1 }, { unique: true });
+categorySchema.index({ workspaceId: 1, parentCategoryId: 1 });
+categorySchema.index({ workspaceId: 1, type: 1 });
+categorySchema.index({ workspaceId: 1, isActive: 1 });
+categorySchema.index({ workspaceId: 1, isVisible: 1 });
+categorySchema.index({ workspaceId: 1, sortOrder: 1 });
 
-applyToJsonTransform(CategorySchema);
+export type CategoryModelType = Model<CategoryDocument>;
 
-export type CategoryDoc = InferSchemaType<typeof CategorySchema>;
-
-export const CategoryModel: Model<CategoryDoc> =
-  mongoose.models.Category || mongoose.model<CategoryDoc>("Category", CategorySchema);
+export const CategoryModel = model<CategoryDocument, CategoryModelType>(
+    "Category",
+    categorySchema
+);

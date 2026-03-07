@@ -1,18 +1,63 @@
-// src/categories/types/category.types.ts
+// src/categories/types/categories.types.ts
 
-export type CategoryType = "expense" | "income" | "both";
+import type { ParamsDictionary } from "express-serve-static-core";
+import type { Types } from "mongoose";
 
-export interface CategoryEntity {
-  id: string;
-  workspaceId: string;
+import type { WorkspaceDocument } from "@/src/workspaces/models/Workspace.model";
 
-  name: string;
-  type: CategoryType;
-  isActive: boolean;
+export const CATEGORY_TYPES = ["EXPENSE", "INCOME", "BOTH"] as const;
 
-  createdByUserId: string;
-  updatedByUserId: string | null;
+export type CategoryType = (typeof CATEGORY_TYPES)[number];
 
-  createdAt: Date;
-  updatedAt: Date;
+export interface WorkspaceCategoryParams extends ParamsDictionary {
+    workspaceId: string;
+}
+
+export interface CategoryParams extends ParamsDictionary {
+    workspaceId: string;
+    categoryId: string;
+}
+
+export interface CreateCategoryBody {
+    name: string;
+    type: CategoryType;
+    parentCategoryId?: string | null;
+    color?: string | null;
+    icon?: string | null;
+    description?: string | null;
+    sortOrder?: number;
+    isSystem?: boolean;
+    isActive?: boolean;
+    isVisible?: boolean;
+}
+
+export interface UpdateCategoryBody {
+    name?: string;
+    type?: CategoryType;
+    parentCategoryId?: string | null;
+    color?: string | null;
+    icon?: string | null;
+    description?: string | null;
+    sortOrder?: number;
+    isActive?: boolean;
+    isVisible?: boolean;
+}
+
+export interface CreateCategoryServiceInput {
+    workspaceId: Types.ObjectId;
+    body: CreateCategoryBody;
+    workspace: WorkspaceDocument;
+}
+
+export interface UpdateCategoryServiceInput {
+    workspaceId: Types.ObjectId;
+    categoryId: Types.ObjectId;
+    body: UpdateCategoryBody;
+    workspace: WorkspaceDocument;
+}
+
+export interface ArchiveCategoryServiceInput {
+    workspaceId: Types.ObjectId;
+    categoryId: Types.ObjectId;
+    workspace: WorkspaceDocument;
 }

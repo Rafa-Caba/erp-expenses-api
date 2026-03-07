@@ -2,32 +2,107 @@
 
 import { z } from "zod";
 
-const ObjectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid ObjectId");
+import { CATEGORY_TYPES } from "@/src/categories/types/category.types";
 
-export const CategoryTypeSchema = z.enum(["INCOME", "EXPENSE"]);
+const hexColorRegex = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
-export const CreateCategorySchema = z.object({
-    name: z.string().trim().min(2).max(120),
-    type: CategoryTypeSchema,
-    color: z.string().trim().min(3).max(20).nullable().optional(),
-    iconKey: z.string().trim().min(1).max(80).nullable().optional(),
-    note: z.string().trim().max(2000).nullable().optional(),
+const categoryTypeSchema = z.enum(CATEGORY_TYPES);
+
+const createCategoryBodySchema = z.object({
+    name: z
+        .string()
+        .trim()
+        .min(1, "El nombre es obligatorio.")
+        .max(120, "El nombre no puede exceder 120 caracteres."),
+    type: categoryTypeSchema,
+    parentCategoryId: z.string().trim().min(1).nullable().optional(),
+    color: z
+        .string()
+        .trim()
+        .max(30, "El color no puede exceder 30 caracteres.")
+        .refine((value) => hexColorRegex.test(value), {
+            message: "El color debe ser un hexadecimal válido.",
+        })
+        .nullable()
+        .optional(),
+    icon: z
+        .string()
+        .trim()
+        .max(100, "El icono no puede exceder 100 caracteres.")
+        .nullable()
+        .optional(),
+    description: z
+        .string()
+        .trim()
+        .max(500, "La descripción no puede exceder 500 caracteres.")
+        .nullable()
+        .optional(),
+    sortOrder: z
+        .number()
+        .int("El orden debe ser un número entero.")
+        .min(0, "El orden no puede ser negativo.")
+        .optional(),
+    isSystem: z.boolean().optional(),
+    isActive: z.boolean().optional(),
+    isVisible: z.boolean().optional(),
 });
 
-export const UpdateCategorySchema = z.object({
-    name: z.string().trim().min(2).max(120).optional(),
-    type: CategoryTypeSchema.optional(),
-    color: z.string().trim().min(3).max(20).nullable().optional(),
-    iconKey: z.string().trim().min(1).max(80).nullable().optional(),
-    note: z.string().trim().max(2000).nullable().optional(),
+const updateCategoryBodySchema = z.object({
+    name: z
+        .string()
+        .trim()
+        .min(1, "El nombre no puede estar vacío.")
+        .max(120, "El nombre no puede exceder 120 caracteres.")
+        .optional(),
+    type: categoryTypeSchema.optional(),
+    parentCategoryId: z.string().trim().min(1).nullable().optional(),
+    color: z
+        .string()
+        .trim()
+        .max(30, "El color no puede exceder 30 caracteres.")
+        .refine((value) => hexColorRegex.test(value), {
+            message: "El color debe ser un hexadecimal válido.",
+        })
+        .nullable()
+        .optional(),
+    icon: z
+        .string()
+        .trim()
+        .max(100, "El icono no puede exceder 100 caracteres.")
+        .nullable()
+        .optional(),
+    description: z
+        .string()
+        .trim()
+        .max(500, "La descripción no puede exceder 500 caracteres.")
+        .nullable()
+        .optional(),
+    sortOrder: z
+        .number()
+        .int("El orden debe ser un número entero.")
+        .min(0, "El orden no puede ser negativo.")
+        .optional(),
+    isActive: z.boolean().optional(),
+    isVisible: z.boolean().optional(),
 });
 
-export const CategoriesListQuerySchema = z.object({
-    includeInactive: z.coerce.boolean().optional().default(false),
-    type: CategoryTypeSchema.optional(),
+export const workspaceCategoryParamsSchema = z.object({
+    params: z.object({
+        workspaceId: z.string().trim().min(1, "El id del workspace es obligatorio."),
+    }),
 });
 
-export const CategoryIdParamsSchema = z.object({
-    workspaceId: ObjectIdSchema,
-    categoryId: ObjectIdSchema,
+export const categoryParamsSchema = z.object({
+    params: z.object({
+        workspaceId: z.string().trim().min(1, "El id del workspace es obligatorio."),
+        categoryId: z.string().trim().min(1, "El id de la categoría es obligatorio."),
+    }),
+});
+
+export const createCategorySchema = z.object({
+    body: createCategoryBodySchema,
+});
+
+export const updateCategorySchema = z.object({
+    body: updateCategoryBodySchema,
 });

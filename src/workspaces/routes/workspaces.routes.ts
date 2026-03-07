@@ -21,6 +21,7 @@ import type {
 import { workspaceMemberRouter } from "./workspaceMember.routes";
 import { accountRouter } from "@/src/accounts/routes/accounts.routes";
 import { cardRouter } from "@/src/cards/routes/card.routes";
+import { categoryRouter } from "@/src/categories/routes/categories.routes";
 import { workspaceSettingsRouter } from "@/src/workspaceSettings/routes/workspaceSettings.routes";
 import { validateRequest } from "@/src/middlewares/validateRequest";
 import { verifyToken } from "@/src/middlewares/verifyToken";
@@ -33,6 +34,7 @@ workspacesRouter.use("/:workspaceId/members", workspaceMemberRouter);
 workspacesRouter.use("/:workspaceId/settings", workspaceSettingsRouter);
 workspacesRouter.use("/:workspaceId/accounts", accountRouter);
 workspacesRouter.use("/:workspaceId/cards", cardRouter);
+workspacesRouter.use("/:workspaceId/categories", categoryRouter);
 
 workspacesRouter.get("/", getWorkspacesController);
 
