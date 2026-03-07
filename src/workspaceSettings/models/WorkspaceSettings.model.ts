@@ -39,8 +39,6 @@ const workspaceSettingsSchema = new Schema<WorkspaceSettingsDocument>(
             type: Schema.Types.ObjectId,
             ref: "Workspace",
             required: true,
-            unique: true,
-            index: true,
         },
         defaultCurrency: {
             type: String,

@@ -1,28 +1,69 @@
 // src/transactions/routes/transactions.routes.ts
 
 import { Router } from "express";
-import { requireAuth } from "@/src/middlewares/requireAuth";
-import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
 
 import {
-    handleCreateTransaction,
-    handleDeleteTransaction,
-    handleGetTransaction,
-    handleListTransactions,
-    handleRestoreTransaction,
-    handleUpdateTransaction,
-} from "@/src/transactions/controllers/transactions.controller";
+    archiveTransactionController,
+    createTransactionController,
+    getTransactionByIdController,
+    getTransactionsController,
+    updateTransactionController,
+} from "../controllers/transactions.controller";
+import {
+    createTransactionSchema,
+    transactionParamsSchema,
+    updateTransactionSchema,
+    workspaceTransactionParamsSchema,
+} from "../schemas/transaction.schemas";
+import type {
+    CreateTransactionBody,
+    TransactionParams,
+    UpdateTransactionBody,
+    WorkspaceTransactionParams,
+} from "../types/transaction.types";
+import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
+import { requireWorkspacePermission } from "@/src/middlewares/requireWorkspacePermission";
+import { validateRequest } from "@/src/middlewares/validateRequest";
 
-export const transactionsRouter = Router({ mergeParams: true });
+const transactionRouter = Router({ mergeParams: true });
 
-transactionsRouter.use(requireAuth);
-transactionsRouter.use(requireWorkspaceAccess("workspaceId"));
+transactionRouter.use(requireWorkspaceAccess());
 
-transactionsRouter.get("/", handleListTransactions);
-transactionsRouter.post("/", handleCreateTransaction);
+transactionRouter.get<WorkspaceTransactionParams>(
+    "/",
+    validateRequest(workspaceTransactionParamsSchema),
+    requireWorkspacePermission("transactions.read"),
+    getTransactionsController
+);
 
-transactionsRouter.get("/:transactionId", handleGetTransaction);
-transactionsRouter.patch("/:transactionId", handleUpdateTransaction);
+transactionRouter.get<TransactionParams>(
+    "/:transactionId",
+    validateRequest(transactionParamsSchema),
+    requireWorkspacePermission("transactions.read"),
+    getTransactionByIdController
+);
 
-transactionsRouter.delete("/:transactionId", handleDeleteTransaction);
-transactionsRouter.patch("/:transactionId/restore", handleRestoreTransaction);
+transactionRouter.post<WorkspaceTransactionParams, object, CreateTransactionBody>(
+    "/",
+    validateRequest(workspaceTransactionParamsSchema),
+    validateRequest(createTransactionSchema),
+    requireWorkspacePermission("transactions.create"),
+    createTransactionController
+);
+
+transactionRouter.patch<TransactionParams, object, UpdateTransactionBody>(
+    "/:transactionId",
+    validateRequest(transactionParamsSchema),
+    validateRequest(updateTransactionSchema),
+    requireWorkspacePermission("transactions.update"),
+    updateTransactionController
+);
+
+transactionRouter.delete<TransactionParams>(
+    "/:transactionId",
+    validateRequest(transactionParamsSchema),
+    requireWorkspacePermission("transactions.delete"),
+    archiveTransactionController
+);
+
+export { transactionRouter };

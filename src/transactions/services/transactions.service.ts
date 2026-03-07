@@ -1,589 +1,447 @@
 // src/transactions/services/transactions.service.ts
 
-import mongoose from "mongoose";
-import { TransactionModel } from "@/src/transactions/models/Transaction.model";
-import { TransactionLineModel } from "@/src/transactions/models/TransactionLine.model";
-import type { TransactionType, TransactionLineType, Visibility } from "@/src/shared/types/finance";
-import type { WorkspaceKind, WorkspaceRole } from "@/src/types/express";
-import { buildVisibilityMatchWithRequested, canMutateEntity } from "@/src/shared/security/visibility";
+import { Types } from "mongoose";
 
-type AccessContext = {
-    actorUserId: string;
-    workspaceKind: WorkspaceKind;
-    role: WorkspaceRole;
-};
+import { TransactionModel } from "../models/Transaction.model";
+import type {
+    ArchiveTransactionServiceInput,
+    CreateTransactionServiceInput,
+    TransactionStatus,
+    UpdateTransactionServiceInput,
+    TransactionDocument,
+} from "../types/transaction.types";
 
-type AttachmentInput = {
-    url: string;
-    publicId: string;
-    mimeType: string;
-    size: number;
-};
-
-type LineInput = {
-    accountId: string;
-    delta: number;
-    currency: "MXN" | "USD";
-    categoryId?: string | null;
-    lineType: TransactionLineType;
-    note?: string | null;
-};
-
-type UpdatePatch = Partial<{
-    type: TransactionType;
-    date: Date;
-    currency: "MXN" | "USD";
-    visibility: Visibility;
-    note: string | null;
-    lines: LineInput[];
-
-    // header extras
-    tags: string[];
-    ownerUserId: string | null;
-    debtId: string | null;
-    attachments: AttachmentInput[];
-}>;
-
-function round2(n: number): number {
-    return Math.round((n + Number.EPSILON) * 100) / 100;
-}
-
-function toObjectId(id: string, label: string): mongoose.Types.ObjectId {
-    if (!mongoose.isValidObjectId(id)) {
-        const e = new Error(`Invalid ${label}`);
-        (e as { status?: number }).status = 400;
-        throw e;
+function normalizeNullableString(value: string | null | undefined): string | null {
+    if (value === undefined || value === null) {
+        return null;
     }
-    return new mongoose.Types.ObjectId(id);
+
+    const normalizedValue = value.trim();
+    return normalizedValue.length > 0 ? normalizedValue : null;
 }
 
-function assertAllLinesMatchCurrency(txCurrency: "MXN" | "USD", lines: LineInput[]) {
-    for (const l of lines) {
-        if (l.currency !== txCurrency) {
-            const e = new Error("All transaction lines must match the transaction currency");
-            (e as { status?: number }).status = 400;
-            throw e;
-        }
+function parseOptionalObjectId(value: string | null | undefined): Types.ObjectId | null {
+    if (!value) {
+        return null;
+    }
+
+    return new Types.ObjectId(value);
+}
+
+function parseRequiredObjectId(value: string): Types.ObjectId {
+    return new Types.ObjectId(value);
+}
+
+function parseTransactionDate(value: string): Date {
+    return new Date(value);
+}
+
+function isValidTransactionDate(value: Date): boolean {
+    return !Number.isNaN(value.getTime());
+}
+
+export class TransactionServiceError extends Error {
+    public readonly statusCode: number;
+    public readonly code: string;
+
+    constructor(message: string, statusCode: number, code: string) {
+        super(message);
+        this.name = "TransactionServiceError";
+        this.statusCode = statusCode;
+        this.code = code;
     }
 }
 
-function normalizeTags(tags: string[]): string[] {
-    const cleaned = tags
-        .map((t) => String(t ?? "").trim())
-        .filter((t) => t.length > 0)
-        .slice(0, 50);
-
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const t of cleaned) {
-        const key = t.toLowerCase();
-        if (!seen.has(key)) {
-            seen.add(key);
-            out.push(t);
-        }
-    }
-    return out;
+export function isTransactionServiceError(error: Error): error is TransactionServiceError {
+    return error instanceof TransactionServiceError;
 }
 
-function computeTotals(type: TransactionType, lines: LineInput[]) {
-    const sumDelta = round2(lines.reduce((acc, l) => acc + l.delta, 0));
-
-    const normalPos = round2(
-        lines
-            .filter((l) => l.lineType === "NORMAL" && l.delta > 0)
-            .reduce((a, l) => a + l.delta, 0)
-    );
-
-    const feeNegAbs = round2(
-        lines
-            .filter((l) => l.lineType === "FEE" && l.delta < 0)
-            .reduce((a, l) => a + Math.abs(l.delta), 0)
-    );
-
-    const feePos = round2(
-        lines
-            .filter((l) => l.lineType === "FEE" && l.delta > 0)
-            .reduce((a, l) => a + l.delta, 0)
-    );
-
-    if (type === "TRANSFER") {
-        const transferAmount = normalPos;
-        const feeAmount = round2(feeNegAbs - feePos);
-        const expectedSumDelta = round2(-feeAmount);
-
-        const hasNormalIn = transferAmount > 0;
-        const hasAnyOut = lines.some((l) => l.delta < 0);
-
-        if (!hasNormalIn || !hasAnyOut) {
-            const e = new Error("Invalid TRANSFER: requires positive NORMAL line(s) and at least one negative line");
-            (e as { status?: number }).status = 400;
-            throw e;
-        }
-
-        if (sumDelta !== expectedSumDelta) {
-            const e = new Error("Invalid TRANSFER: sum of deltas must equal -feeAmount (0 if no fees)");
-            (e as { status?: number }).status = 400;
-            throw e;
-        }
-
-        const totalAmount = round2(transferAmount + feeAmount);
-        return { totalAmount, transferAmount, feeAmount };
-    }
-
-    if (type === "INCOME") {
-        if (sumDelta <= 0) {
-            const e = new Error("Invalid INCOME: sum of deltas must be positive");
-            (e as { status?: number }).status = 400;
-            throw e;
-        }
-        return { totalAmount: round2(sumDelta), transferAmount: null, feeAmount: null };
-    }
-
-    if (type === "EXPENSE") {
-        if (sumDelta >= 0) {
-            const e = new Error("Invalid EXPENSE: sum of deltas must be negative");
-            (e as { status?: number }).status = 400;
-            throw e;
-        }
-        return { totalAmount: round2(Math.abs(sumDelta)), transferAmount: null, feeAmount: null };
-    }
-
-    // ADJUSTMENT / DEBT_PAYMENT
-    return { totalAmount: round2(Math.abs(sumDelta)), transferAmount: null, feeAmount: null };
+async function findTransactionById(
+    workspaceId: Types.ObjectId,
+    transactionId: Types.ObjectId
+): Promise<TransactionDocument | null> {
+    return TransactionModel.findOne({
+        _id: transactionId,
+        workspaceId,
+    }).lean<TransactionDocument | null>();
 }
 
-export async function createTransaction(params: {
-    workspaceId: string;
-    access: AccessContext;
-    type: TransactionType;
-    date: Date;
-    currency: "MXN" | "USD";
-    visibility: Visibility;
-    note: string | null;
-    lines: LineInput[];
+function validateBusinessRules(input: {
+    accountId: Types.ObjectId | null;
+    destinationAccountId: Types.ObjectId | null;
+    cardId: Types.ObjectId | null;
+    categoryId: Types.ObjectId | null;
+    type: "expense" | "income" | "debt_payment" | "transfer" | "adjustment";
+    isRecurring: boolean;
+    recurrenceRule: string | null;
+    amount: number;
+    transactionDate: Date;
+}): void {
+    const {
+        accountId,
+        destinationAccountId,
+        cardId,
+        categoryId,
+        type,
+        isRecurring,
+        recurrenceRule,
+        amount,
+        transactionDate,
+    } = input;
 
-    // header extras
-    tags?: string[];
-    ownerUserId?: string | null;
-    debtId?: string | null;
-    attachments?: AttachmentInput[];
-}) {
-    assertAllLinesMatchCurrency(params.currency, params.lines);
-
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
-        const totals = computeTotals(params.type, params.lines);
-
-        const workspaceObjectId = toObjectId(params.workspaceId, "workspaceId");
-        const actorObjectId = toObjectId(params.access.actorUserId, "actorUserId");
-
-        const ownerUserObjectId =
-            params.ownerUserId === undefined || params.ownerUserId === null
-                ? null
-                : toObjectId(params.ownerUserId, "ownerUserId");
-
-        const debtObjectId =
-            params.debtId === undefined || params.debtId === null ? null : toObjectId(params.debtId, "debtId");
-
-        const tags = params.tags ? normalizeTags(params.tags) : [];
-        const attachments = Array.isArray(params.attachments) ? params.attachments : [];
-
-        const txDocs = await TransactionModel.create(
-            [
-                {
-                    workspaceId: workspaceObjectId,
-                    type: params.type,
-                    date: params.date,
-                    currency: params.currency,
-                    visibility: params.visibility,
-
-                    ownerUserId: ownerUserObjectId,
-                    debtId: debtObjectId,
-
-                    tags,
-                    note: params.note ?? null,
-                    attachments,
-
-                    totalAmount: totals.totalAmount,
-                    transferAmount: totals.transferAmount,
-                    feeAmount: totals.feeAmount,
-
-                    isDeleted: false,
-                    deletedAt: null,
-
-                    createdByUserId: actorObjectId,
-                    updatedByUserId: null,
-                },
-            ],
-            { session }
+    if (amount <= 0) {
+        throw new TransactionServiceError(
+            "El monto debe ser mayor a 0.",
+            400,
+            "INVALID_TRANSACTION_AMOUNT"
         );
+    }
 
-        const createdTx = txDocs[0];
-
-        await TransactionLineModel.insertMany(
-            params.lines.map((l) => ({
-                workspaceId: workspaceObjectId,
-                transactionId: createdTx._id,
-                accountId: toObjectId(l.accountId, "accountId"),
-                delta: l.delta,
-                currency: l.currency,
-                categoryId: l.categoryId ? toObjectId(l.categoryId, "categoryId") : null,
-                lineType: l.lineType,
-                note: l.note ?? null,
-                createdByUserId: actorObjectId,
-                updatedByUserId: null,
-            })),
-            { session }
+    if (!isValidTransactionDate(transactionDate)) {
+        throw new TransactionServiceError(
+            "La fecha de transacción no es válida.",
+            400,
+            "INVALID_TRANSACTION_DATE"
         );
+    }
 
-        await session.commitTransaction();
-        return createdTx;
-    } catch (err) {
-        await session.abortTransaction();
-        throw err;
-    } finally {
-        session.endSession();
+    if (isRecurring && !recurrenceRule) {
+        throw new TransactionServiceError(
+            "La regla de recurrencia es obligatoria cuando la transacción es recurrente.",
+            400,
+            "RECURRENCE_RULE_REQUIRED"
+        );
+    }
+
+    if (!isRecurring && recurrenceRule) {
+        throw new TransactionServiceError(
+            "La regla de recurrencia solo aplica cuando la transacción es recurrente.",
+            400,
+            "RECURRENCE_RULE_NOT_ALLOWED"
+        );
+    }
+
+    if (type === "transfer") {
+        if (!accountId) {
+            throw new TransactionServiceError(
+                "La cuenta origen es obligatoria para transferencias.",
+                400,
+                "TRANSFER_SOURCE_ACCOUNT_REQUIRED"
+            );
+        }
+
+        if (!destinationAccountId) {
+            throw new TransactionServiceError(
+                "La cuenta destino es obligatoria para transferencias.",
+                400,
+                "TRANSFER_DESTINATION_ACCOUNT_REQUIRED"
+            );
+        }
+
+        if (accountId.equals(destinationAccountId)) {
+            throw new TransactionServiceError(
+                "La cuenta destino debe ser diferente a la cuenta origen.",
+                400,
+                "TRANSFER_ACCOUNTS_MUST_DIFFER"
+            );
+        }
+
+        if (cardId) {
+            throw new TransactionServiceError(
+                "Las transferencias no deben incluir cardId.",
+                400,
+                "TRANSFER_CARD_NOT_ALLOWED"
+            );
+        }
+    }
+
+    if (type === "debt_payment") {
+        if (!accountId) {
+            throw new TransactionServiceError(
+                "La cuenta es obligatoria para pagos de deuda.",
+                400,
+                "DEBT_PAYMENT_ACCOUNT_REQUIRED"
+            );
+        }
+
+        if (!cardId) {
+            throw new TransactionServiceError(
+                "La tarjeta es obligatoria para pagos de deuda.",
+                400,
+                "DEBT_PAYMENT_CARD_REQUIRED"
+            );
+        }
+    }
+
+    if (type === "expense" || type === "income" || type === "adjustment") {
+        if (!accountId && !cardId) {
+            throw new TransactionServiceError(
+                "Debes enviar accountId o cardId para este tipo de transacción.",
+                400,
+                "TRANSACTION_SOURCE_REQUIRED"
+            );
+        }
+
+        if (!categoryId) {
+            throw new TransactionServiceError(
+                "La categoría es obligatoria para este tipo de transacción.",
+                400,
+                "TRANSACTION_CATEGORY_REQUIRED"
+            );
+        }
+
+        if (destinationAccountId) {
+            throw new TransactionServiceError(
+                "destinationAccountId solo aplica a transacciones tipo transfer.",
+                400,
+                "DESTINATION_ACCOUNT_NOT_ALLOWED"
+            );
+        }
     }
 }
 
-export async function getTransactionWithLines(params: {
-    workspaceId: string;
-    transactionId: string;
-    access: AccessContext;
-}) {
-    const visibilityMatch = buildVisibilityMatchWithRequested(
-        {
-            workspaceKind: params.access.workspaceKind,
-            role: params.access.role,
-            actorUserId: params.access.actorUserId,
-        },
-        undefined
-    );
+export async function getTransactionsService(
+    workspaceId: Types.ObjectId
+): Promise<TransactionDocument[]> {
+    return TransactionModel.find({
+        workspaceId,
+        isActive: true,
+        isArchived: false,
+    })
+        .sort({
+            transactionDate: -1,
+            createdAt: -1,
+        })
+        .lean<TransactionDocument[]>();
+}
 
-    const tx = await TransactionModel.findOne({
-        _id: toObjectId(params.transactionId, "transactionId"),
-        workspaceId: toObjectId(params.workspaceId, "workspaceId"),
-        isDeleted: false,
-        ...visibilityMatch,
+export async function getTransactionByIdService(
+    workspaceId: Types.ObjectId,
+    transactionId: Types.ObjectId
+): Promise<TransactionDocument | null> {
+    return findTransactionById(workspaceId, transactionId);
+}
+
+export async function createTransactionService(
+    input: CreateTransactionServiceInput
+): Promise<TransactionDocument> {
+    const { workspaceId, body } = input;
+
+    const accountId = parseOptionalObjectId(body.accountId);
+    const destinationAccountId = parseOptionalObjectId(body.destinationAccountId);
+    const cardId = parseOptionalObjectId(body.cardId);
+    const memberId = parseRequiredObjectId(body.memberId);
+    const categoryId = parseOptionalObjectId(body.categoryId);
+    const createdByUserId = parseRequiredObjectId(body.createdByUserId);
+    const transactionDate = parseTransactionDate(body.transactionDate);
+    const isRecurring = body.isRecurring ?? false;
+    const recurrenceRule = normalizeNullableString(body.recurrenceRule);
+
+    validateBusinessRules({
+        accountId,
+        destinationAccountId,
+        cardId,
+        categoryId,
+        type: body.type,
+        isRecurring,
+        recurrenceRule,
+        amount: body.amount,
+        transactionDate,
     });
 
-    if (!tx) return null;
-
-    const lines = await TransactionLineModel.find({
-        transactionId: toObjectId(params.transactionId, "transactionId"),
-        workspaceId: toObjectId(params.workspaceId, "workspaceId"),
-    }).sort({ createdAt: 1, _id: 1 });
-
-    return { tx, lines };
-}
-
-export async function listTransactions(params: {
-    workspaceId: string;
-    access: AccessContext;
-
-    from?: Date;
-    to?: Date;
-    type?: TransactionType;
-    accountId?: string;
-    categoryId?: string;
-    visibility?: Visibility;
-
-    // optional header filters
-    tag?: string;
-    ownerUserId?: string;
-    debtId?: string;
-
-    page: number;
-    limit: number;
-}) {
-    const visibilityMatch = buildVisibilityMatchWithRequested(
-        {
-            workspaceKind: params.access.workspaceKind,
-            role: params.access.role,
-            actorUserId: params.access.actorUserId,
-        },
-        params.visibility
-    );
-
-    const workspaceObjectId = toObjectId(params.workspaceId, "workspaceId");
-
-    const match: Record<string, unknown> = {
-        workspaceId: workspaceObjectId,
-        isDeleted: false,
-        ...visibilityMatch,
-    };
-
-    if (params.type) match.type = params.type;
-
-    if (params.from || params.to) {
-        const dateMatch: Record<string, Date> = {};
-        if (params.from) dateMatch.$gte = params.from;
-        if (params.to) dateMatch.$lte = params.to;
-        match.date = dateMatch;
-    }
-
-    if (params.tag) match.tags = params.tag;
-    if (params.ownerUserId) match.ownerUserId = toObjectId(params.ownerUserId, "ownerUserId");
-    if (params.debtId) match.debtId = toObjectId(params.debtId, "debtId");
-
-    if (params.accountId || params.categoryId) {
-        const lineMatch: Record<string, unknown> = { workspaceId: workspaceObjectId };
-        if (params.accountId) lineMatch.accountId = toObjectId(params.accountId, "accountId");
-        if (params.categoryId) lineMatch.categoryId = toObjectId(params.categoryId, "categoryId");
-
-        const txIds = await TransactionLineModel.distinct("transactionId", lineMatch);
-
-        if (txIds.length === 0) {
-            return { items: [], page: params.page, limit: params.limit, total: 0, pages: 0 };
-        }
-
-        match._id = { $in: txIds };
-    }
-
-    const safeLimit = Math.max(1, Math.min(200, params.limit));
-    const safePage = Math.max(1, params.page);
-    const skip = (safePage - 1) * safeLimit;
-
-    const [items, total] = await Promise.all([
-        TransactionModel.find(match)
-            .sort({ date: -1, createdAt: -1, _id: -1 })
-            .skip(skip)
-            .limit(safeLimit),
-        TransactionModel.countDocuments(match),
-    ]);
+    const transaction = await TransactionModel.create({
+        workspaceId,
+        accountId,
+        destinationAccountId,
+        cardId,
+        memberId,
+        categoryId,
+        type: body.type,
+        amount: body.amount,
+        currency: body.currency,
+        description: body.description.trim(),
+        merchant: normalizeNullableString(body.merchant),
+        transactionDate,
+        status: body.status ?? "posted",
+        reference: normalizeNullableString(body.reference),
+        notes: normalizeNullableString(body.notes),
+        isRecurring,
+        recurrenceRule,
+        isActive: true,
+        isArchived: false,
+        isVisible: body.isVisible ?? true,
+        createdByUserId,
+    });
 
     return {
-        items,
-        page: safePage,
-        limit: safeLimit,
-        total,
-        pages: total === 0 ? 0 : Math.ceil(total / safeLimit),
+        _id: transaction._id,
+        workspaceId: transaction.workspaceId,
+        accountId: transaction.accountId ?? null,
+        destinationAccountId: transaction.destinationAccountId ?? null,
+        cardId: transaction.cardId ?? null,
+        memberId: transaction.memberId,
+        categoryId: transaction.categoryId ?? null,
+        type: transaction.type,
+        amount: transaction.amount,
+        currency: transaction.currency,
+        description: transaction.description,
+        merchant: transaction.merchant ?? null,
+        transactionDate: transaction.transactionDate,
+        status: transaction.status as TransactionStatus,
+        reference: transaction.reference ?? null,
+        notes: transaction.notes ?? null,
+        isRecurring: transaction.isRecurring ?? false,
+        recurrenceRule: transaction.recurrenceRule ?? null,
+        isActive: transaction.isActive,
+        isArchived: transaction.isArchived ?? false,
+        isVisible: transaction.isVisible ?? true,
+        createdByUserId: transaction.createdByUserId,
+        createdAt: transaction.createdAt,
+        updatedAt: transaction.updatedAt,
     };
 }
 
-export async function updateTransaction(params: {
-    workspaceId: string;
-    transactionId: string;
-    access: AccessContext;
-    patch: UpdatePatch;
-}) {
-    const session = await mongoose.startSession();
-    session.startTransaction();
+export async function updateTransactionService(
+    input: UpdateTransactionServiceInput
+): Promise<TransactionDocument | null> {
+    const { workspaceId, transactionId, body } = input;
 
-    try {
-        const visibilityMatch = buildVisibilityMatchWithRequested(
-            {
-                workspaceKind: params.access.workspaceKind,
-                role: params.access.role,
-                actorUserId: params.access.actorUserId,
-            },
-            undefined
-        );
+    const existingTransaction = await findTransactionById(workspaceId, transactionId);
 
-        const existing = await TransactionModel.findOne(
-            {
-                _id: toObjectId(params.transactionId, "transactionId"),
-                workspaceId: toObjectId(params.workspaceId, "workspaceId"),
-                isDeleted: false,
-                ...visibilityMatch,
-            },
-            undefined,
-            { session }
-        );
-
-        if (!existing) return null;
-
-        const createdBy = String(existing.createdByUserId);
-        const ctx = {
-            workspaceKind: params.access.workspaceKind,
-            role: params.access.role,
-            actorUserId: params.access.actorUserId,
-        };
-
-        if (!canMutateEntity(ctx, createdBy)) {
-            const e = new Error("Forbidden");
-            (e as { status?: number }).status = 403;
-            throw e;
-        }
-
-        const nextType = params.patch.type ?? (existing.type as TransactionType);
-        const nextCurrency = params.patch.currency ?? (existing.currency as "MXN" | "USD");
-
-        const isTypeOrCurrencyChanging =
-            (params.patch.type && params.patch.type !== existing.type) ||
-            (params.patch.currency && params.patch.currency !== existing.currency);
-
-        const isReplacingLines = Array.isArray(params.patch.lines);
-
-        if (isTypeOrCurrencyChanging && !isReplacingLines) {
-            const e = new Error("Updating type/currency requires providing lines");
-            (e as { status?: number }).status = 400;
-            throw e;
-        }
-
-        if (isReplacingLines && params.patch.lines) {
-            assertAllLinesMatchCurrency(nextCurrency, params.patch.lines);
-            const totals = computeTotals(nextType, params.patch.lines);
-
-            existing.type = nextType;
-            existing.currency = nextCurrency;
-
-            existing.totalAmount = totals.totalAmount;
-            existing.transferAmount = totals.transferAmount;
-            existing.feeAmount = totals.feeAmount;
-
-            await TransactionLineModel.deleteMany(
-                {
-                    workspaceId: toObjectId(params.workspaceId, "workspaceId"),
-                    transactionId: toObjectId(params.transactionId, "transactionId"),
-                },
-                { session }
-            );
-
-            const workspaceObjectId = toObjectId(params.workspaceId, "workspaceId");
-            const actorObjectId = toObjectId(params.access.actorUserId, "actorUserId");
-
-            await TransactionLineModel.insertMany(
-                params.patch.lines.map((l) => ({
-                    workspaceId: workspaceObjectId,
-                    transactionId: existing._id,
-                    accountId: toObjectId(l.accountId, "accountId"),
-                    delta: l.delta,
-                    currency: l.currency,
-                    categoryId: l.categoryId ? toObjectId(l.categoryId, "categoryId") : null,
-                    lineType: l.lineType,
-                    note: l.note ?? null,
-                    createdByUserId: actorObjectId,
-                    updatedByUserId: null,
-                })),
-                { session }
-            );
-        } else {
-            if (params.patch.type) existing.type = params.patch.type;
-            if (params.patch.currency) existing.currency = params.patch.currency;
-        }
-
-        if (params.patch.date) existing.date = params.patch.date;
-        if (params.patch.visibility) existing.visibility = params.patch.visibility;
-        if (params.patch.note !== undefined) existing.note = params.patch.note;
-
-        if (params.patch.tags) existing.tags = normalizeTags(params.patch.tags);
-
-        if (params.patch.ownerUserId !== undefined) {
-            existing.ownerUserId = params.patch.ownerUserId ? toObjectId(params.patch.ownerUserId, "ownerUserId") : null;
-        }
-
-        if (params.patch.debtId !== undefined) {
-            existing.debtId = params.patch.debtId ? toObjectId(params.patch.debtId, "debtId") : null;
-        }
-
-        /**
-         * ✅ FIX TS2740:
-         * existing.attachments is a Mongoose DocumentArray, so we mutate it instead of reassigning.
-         */
-        if (params.patch.attachments) {
-            existing.attachments.splice(0, existing.attachments.length, ...params.patch.attachments);
-        }
-
-        existing.updatedByUserId = toObjectId(params.access.actorUserId, "actorUserId");
-
-        await existing.save({ session });
-
-        await session.commitTransaction();
-        return existing;
-    } catch (err) {
-        await session.abortTransaction();
-        throw err;
-    } finally {
-        session.endSession();
+    if (!existingTransaction) {
+        return null;
     }
-}
 
-export async function softDeleteTransaction(params: {
-    workspaceId: string;
-    transactionId: string;
-    access: AccessContext;
-}) {
-    const visibilityMatch = buildVisibilityMatchWithRequested(
-        {
-            workspaceKind: params.access.workspaceKind,
-            role: params.access.role,
-            actorUserId: params.access.actorUserId,
-        },
-        undefined
-    );
+    const nextAccountId =
+        body.accountId !== undefined
+            ? parseOptionalObjectId(body.accountId)
+            : existingTransaction.accountId ?? null;
 
-    const tx = await TransactionModel.findOne({
-        _id: toObjectId(params.transactionId, "transactionId"),
-        workspaceId: toObjectId(params.workspaceId, "workspaceId"),
-        isDeleted: false,
-        ...visibilityMatch,
+    const nextDestinationAccountId =
+        body.destinationAccountId !== undefined
+            ? parseOptionalObjectId(body.destinationAccountId)
+            : existingTransaction.destinationAccountId ?? null;
+
+    const nextCardId =
+        body.cardId !== undefined
+            ? parseOptionalObjectId(body.cardId)
+            : existingTransaction.cardId ?? null;
+
+    const nextMemberId =
+        body.memberId !== undefined
+            ? parseRequiredObjectId(body.memberId)
+            : existingTransaction.memberId;
+
+    const nextCategoryId =
+        body.categoryId !== undefined
+            ? parseOptionalObjectId(body.categoryId)
+            : existingTransaction.categoryId ?? null;
+
+    const nextType = body.type ?? existingTransaction.type;
+    const nextAmount = body.amount ?? existingTransaction.amount;
+    const nextTransactionDate =
+        body.transactionDate !== undefined
+            ? parseTransactionDate(body.transactionDate)
+            : existingTransaction.transactionDate;
+    const nextIsRecurring = body.isRecurring ?? (existingTransaction.isRecurring ?? false);
+    const nextRecurrenceRule =
+        body.recurrenceRule !== undefined
+            ? normalizeNullableString(body.recurrenceRule)
+            : existingTransaction.recurrenceRule ?? null;
+
+    validateBusinessRules({
+        accountId: nextAccountId,
+        destinationAccountId: nextDestinationAccountId,
+        cardId: nextCardId,
+        categoryId: nextCategoryId,
+        type: nextType,
+        isRecurring: nextIsRecurring,
+        recurrenceRule: nextRecurrenceRule,
+        amount: nextAmount,
+        transactionDate: nextTransactionDate,
     });
 
-    if (!tx) return null;
+    const updatedTransaction = await TransactionModel.findOneAndUpdate(
+        {
+            _id: transactionId,
+            workspaceId,
+        },
+        {
+            $set: {
+                accountId: nextAccountId,
+                destinationAccountId: nextDestinationAccountId,
+                cardId: nextCardId,
+                memberId: nextMemberId,
+                categoryId: nextCategoryId,
+                type: nextType,
+                amount: nextAmount,
+                currency: body.currency ?? existingTransaction.currency,
+                description:
+                    body.description !== undefined
+                        ? body.description.trim()
+                        : existingTransaction.description,
+                merchant:
+                    body.merchant !== undefined
+                        ? normalizeNullableString(body.merchant)
+                        : existingTransaction.merchant ?? null,
+                transactionDate: nextTransactionDate,
+                status: body.status ?? existingTransaction.status,
+                reference:
+                    body.reference !== undefined
+                        ? normalizeNullableString(body.reference)
+                        : existingTransaction.reference ?? null,
+                notes:
+                    body.notes !== undefined
+                        ? normalizeNullableString(body.notes)
+                        : existingTransaction.notes ?? null,
+                isRecurring: nextIsRecurring,
+                recurrenceRule: nextRecurrenceRule,
+                isActive:
+                    body.isActive !== undefined ? body.isActive : existingTransaction.isActive,
+                isArchived:
+                    body.isArchived !== undefined
+                        ? body.isArchived
+                        : existingTransaction.isArchived ?? false,
+                isVisible:
+                    body.isVisible !== undefined
+                        ? body.isVisible
+                        : existingTransaction.isVisible ?? true,
+            },
+        },
+        {
+            new: true,
+        }
+    ).lean<TransactionDocument | null>();
 
-    const createdBy = String(tx.createdByUserId);
-    const ctx = {
-        workspaceKind: params.access.workspaceKind,
-        role: params.access.role,
-        actorUserId: params.access.actorUserId,
-    };
-
-    if (!canMutateEntity(ctx, createdBy)) {
-        const e = new Error("Forbidden");
-        (e as { status?: number }).status = 403;
-        throw e;
-    }
-
-    tx.isDeleted = true;
-    tx.deletedAt = new Date();
-    tx.updatedByUserId = toObjectId(params.access.actorUserId, "actorUserId");
-
-    await tx.save();
-    return tx;
+    return updatedTransaction;
 }
 
-export async function restoreTransaction(params: {
-    workspaceId: string;
-    transactionId: string;
-    access: AccessContext;
-}) {
-    const visibilityMatch = buildVisibilityMatchWithRequested(
-        {
-            workspaceKind: params.access.workspaceKind,
-            role: params.access.role,
-            actorUserId: params.access.actorUserId,
-        },
-        undefined
-    );
+export async function archiveTransactionService(
+    input: ArchiveTransactionServiceInput
+): Promise<TransactionDocument | null> {
+    const { workspaceId, transactionId } = input;
 
-    const tx = await TransactionModel.findOne({
-        _id: toObjectId(params.transactionId, "transactionId"),
-        workspaceId: toObjectId(params.workspaceId, "workspaceId"),
-        ...visibilityMatch,
-    });
+    const existingTransaction = await findTransactionById(workspaceId, transactionId);
 
-    if (!tx) return null;
-
-    const createdBy = String(tx.createdByUserId);
-    const ctx = {
-        workspaceKind: params.access.workspaceKind,
-        role: params.access.role,
-        actorUserId: params.access.actorUserId,
-    };
-
-    if (!canMutateEntity(ctx, createdBy)) {
-        const e = new Error("Forbidden");
-        (e as { status?: number }).status = 403;
-        throw e;
+    if (!existingTransaction) {
+        return null;
     }
 
-    tx.isDeleted = false;
-    tx.deletedAt = null;
-    tx.updatedByUserId = toObjectId(params.access.actorUserId, "actorUserId");
+    const archivedTransaction = await TransactionModel.findOneAndUpdate(
+        {
+            _id: transactionId,
+            workspaceId,
+        },
+        {
+            $set: {
+                isActive: false,
+                isArchived: true,
+            },
+        },
+        {
+            new: true,
+        }
+    ).lean<TransactionDocument | null>();
 
-    await tx.save();
-    return tx;
+    return archivedTransaction;
 }
