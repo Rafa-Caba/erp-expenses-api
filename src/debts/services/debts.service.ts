@@ -1,375 +1,343 @@
 // src/debts/services/debts.service.ts
 
-import mongoose from "mongoose";
-import { DebtModel, type DebtStatus } from "@/src/debts/models/Debt.model";
-import type { Visibility } from "@/src/shared/types/finance";
-import type { WorkspaceKind, WorkspaceRole } from "@/src/types/express";
-import { canManageWorkspaceResources } from "@/src/shared/security/workspacePermissions";
+import { Types } from "mongoose";
 
-type AccessContext = {
-    actorUserId: string;
-    workspaceKind: WorkspaceKind;
-    role: WorkspaceRole;
-};
+import { DebtModel } from "../models/Debt.model";
+import type {
+    CreateDebtServiceInput,
+    DebtDocument,
+    DebtStatus,
+    DeleteDebtServiceInput,
+    UpdateDebtServiceInput,
+} from "../types/debts.types";
 
-function round2(n: number): number {
-    return Math.round((n + Number.EPSILON) * 100) / 100;
-}
-
-function toObjectId(id: string, label: string): mongoose.Types.ObjectId {
-    if (!mongoose.isValidObjectId(id)) {
-        const e = new Error(`Invalid ${label}`);
-        (e as { status?: number }).status = 400;
-        throw e;
-    }
-    return new mongoose.Types.ObjectId(id);
-}
-
-/**
- * Visibility rules:
- * - SHARED: visible to all workspace members
- * - PRIVATE: visible ONLY to ownerUserId (even if role is OWNER/ADMIN)
- */
-function buildDebtVisibilityMatch(params: {
-    actorUserId: string;
-    requested?: Visibility;
-}) {
-    if (!params.requested) {
-        return {
-            $or: [
-                { visibility: "SHARED" as const },
-                {
-                    visibility: "PRIVATE" as const,
-                    ownerUserId: new mongoose.Types.ObjectId(params.actorUserId),
-                },
-            ],
-        };
+function normalizeNullableString(value: string | null | undefined): string | null {
+    if (value === undefined || value === null) {
+        return null;
     }
 
-    if (params.requested === "SHARED") return { visibility: "SHARED" as const };
-    return {
-        visibility: "PRIVATE" as const,
-        ownerUserId: new mongoose.Types.ObjectId(params.actorUserId),
-    };
+    const normalizedValue = value.trim();
+    return normalizedValue.length > 0 ? normalizedValue : null;
 }
 
-function assertOwnerRules(input: { visibility: Visibility; ownerUserId: string | null }) {
-    if (input.visibility === "PRIVATE" && !input.ownerUserId) {
-        const e = new Error("ownerUserId is required when visibility is PRIVATE");
-        (e as { status?: number }).status = 400;
-        throw e;
+function parseOptionalObjectId(value: string | null | undefined): Types.ObjectId | null {
+    if (value === undefined || value === null) {
+        return null;
     }
+
+    const normalizedValue = value.trim();
+
+    if (normalizedValue.length === 0) {
+        return null;
+    }
+
+    return new Types.ObjectId(normalizedValue);
 }
 
-/**
- * Mutability rules (aligned to your transactions philosophy):
- *
- * PRIVATE:
- *  - mutate: only ownerUserId
- *
- * SHARED:
- *  - workspaceKind INDIVIDUAL: "mis cosas" => only owner (if owner exists) else creator
- *  - workspaceKind SHARED: creator OR privileged role (OWNER/ADMIN)
- */
-function canMutateDebt(input: {
-    access: AccessContext;
-    visibility: Visibility;
-    ownerUserId: string | null;
-    createdByUserId: string;
-}) {
-    const actor = input.access.actorUserId;
-    const owner = input.ownerUserId;
-
-    if (input.visibility === "PRIVATE") {
-        return owner === actor;
-    }
-
-    // visibility === SHARED
-    if (input.access.workspaceKind === "INDIVIDUAL") {
-        // INDIVIDUAL: only owner exists (or should).
-        // If owner exists, only owner can mutate; else creator (fallback).
-        if (owner) return owner === actor;
-        return input.createdByUserId === actor;
-    }
-
-    // SHARED workspace:
-    if (input.createdByUserId === actor) return true;
-
-    // OWNER/ADMIN can manage workspace resources (your existing helper)
-    return canManageWorkspaceResources({
-        workspaceKind: input.access.workspaceKind,
-        role: input.access.role,
-    });
+function parseRequiredDate(value: string): Date {
+    return new Date(value);
 }
 
-export async function createDebt(params: {
-    workspaceId: string;
-    access: AccessContext;
+function parseOptionalDate(value: string | null | undefined): Date | null {
+    if (value === undefined || value === null) {
+        return null;
+    }
 
-    kind: "I_OWE" | "OWE_ME";
-    principal: number;
-    remaining?: number;
+    return new Date(value);
+}
 
-    counterparty: string;
-    dueDate?: Date | null;
+function isValidDate(value: Date): boolean {
+    return !Number.isNaN(value.getTime());
+}
 
-    currency: "MXN" | "USD";
-    visibility: Visibility;
-    ownerUserId: string | null;
+function getNow(): Date {
+    return new Date();
+}
 
-    status: DebtStatus;
-    note: string | null;
-}) {
-    assertOwnerRules({ visibility: params.visibility, ownerUserId: params.ownerUserId });
+function resolveDebtStatus(
+    requestedStatus: DebtStatus | undefined,
+    remainingAmount: number,
+    dueDate: Date | null
+): DebtStatus {
+    if (requestedStatus === "cancelled") {
+        return "cancelled";
+    }
 
-    const principal = round2(params.principal);
-    const remaining = round2(params.remaining ?? params.principal);
+    if (remainingAmount === 0) {
+        return "paid";
+    }
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
-        const debtDocs = await DebtModel.create(
-            [
-                {
-                    workspaceId: toObjectId(params.workspaceId, "workspaceId"),
-                    kind: params.kind,
-                    currency: params.currency,
-                    visibility: params.visibility,
-                    ownerUserId: params.ownerUserId ? toObjectId(params.ownerUserId, "ownerUserId") : null,
-                    counterparty: params.counterparty,
-                    principal,
-                    remaining,
-                    dueDate: params.dueDate ?? null,
-                    note: params.note ?? null,
-                    status: params.status,
-                    isDeleted: false,
-                    deletedAt: null,
-                    createdByUserId: toObjectId(params.access.actorUserId, "actorUserId"),
-                    updatedByUserId: null,
-                },
-            ],
-            { session }
+    if (requestedStatus === "paid" && remainingAmount > 0) {
+        throw new DebtServiceError(
+            "Una deuda pagada debe tener monto restante igual a 0.",
+            400,
+            "INVALID_PAID_STATUS"
         );
+    }
 
-        await session.commitTransaction();
-        return debtDocs[0];
-    } catch (err) {
-        await session.abortTransaction();
-        throw err;
-    } finally {
-        session.endSession();
+    if (dueDate && dueDate.getTime() < getNow().getTime()) {
+        return "overdue";
+    }
+
+    return requestedStatus ?? "active";
+}
+
+function validateAmounts(originalAmount: number, remainingAmount: number): void {
+    if (originalAmount <= 0) {
+        throw new DebtServiceError(
+            "El monto original debe ser mayor a 0.",
+            400,
+            "INVALID_ORIGINAL_AMOUNT"
+        );
+    }
+
+    if (remainingAmount < 0) {
+        throw new DebtServiceError(
+            "El monto restante no puede ser menor a 0.",
+            400,
+            "INVALID_REMAINING_AMOUNT"
+        );
+    }
+
+    if (remainingAmount > originalAmount) {
+        throw new DebtServiceError(
+            "El monto restante no puede ser mayor al monto original.",
+            400,
+            "REMAINING_AMOUNT_EXCEEDS_ORIGINAL"
+        );
     }
 }
 
-export async function getDebt(params: { workspaceId: string; debtId: string; access: AccessContext }) {
-    const matchVisibility = buildDebtVisibilityMatch({ actorUserId: params.access.actorUserId });
+function validateDates(startDate: Date, dueDate: Date | null): void {
+    if (!isValidDate(startDate)) {
+        throw new DebtServiceError(
+            "La fecha de inicio no es válida.",
+            400,
+            "INVALID_START_DATE"
+        );
+    }
 
+    if (dueDate !== null && !isValidDate(dueDate)) {
+        throw new DebtServiceError(
+            "La fecha de vencimiento no es válida.",
+            400,
+            "INVALID_DUE_DATE"
+        );
+    }
+
+    if (dueDate !== null && dueDate.getTime() < startDate.getTime()) {
+        throw new DebtServiceError(
+            "La fecha de vencimiento no puede ser anterior a la fecha de inicio.",
+            400,
+            "INVALID_DATE_RANGE"
+        );
+    }
+}
+
+async function findDebtById(
+    workspaceId: Types.ObjectId,
+    debtId: Types.ObjectId
+): Promise<DebtDocument | null> {
     return DebtModel.findOne({
-        _id: toObjectId(params.debtId, "debtId"),
-        workspaceId: toObjectId(params.workspaceId, "workspaceId"),
-        isDeleted: false,
-        ...matchVisibility,
-    });
+        _id: debtId,
+        workspaceId,
+    }).lean<DebtDocument | null>();
 }
 
-export async function listDebts(params: {
-    workspaceId: string;
-    access: AccessContext;
+export class DebtServiceError extends Error {
+    public readonly statusCode: number;
+    public readonly code: string;
 
-    kind?: "I_OWE" | "OWE_ME";
-    status?: DebtStatus;
-    visibility?: Visibility;
-
-    dueFrom?: Date;
-    dueTo?: Date;
-
-    page: number;
-    limit: number;
-}) {
-    const matchVisibility = buildDebtVisibilityMatch({
-        actorUserId: params.access.actorUserId,
-        requested: params.visibility,
-    });
-
-    const match: Record<string, any> = {
-        workspaceId: toObjectId(params.workspaceId, "workspaceId"),
-        isDeleted: false,
-        ...matchVisibility,
-    };
-
-    if (params.kind) match.kind = params.kind;
-    if (params.status) match.status = params.status;
-
-    if (params.dueFrom || params.dueTo) {
-        match.dueDate = {};
-        if (params.dueFrom) match.dueDate.$gte = params.dueFrom;
-        if (params.dueTo) match.dueDate.$lte = params.dueTo;
+    constructor(message: string, statusCode: number, code: string) {
+        super(message);
+        this.name = "DebtServiceError";
+        this.statusCode = statusCode;
+        this.code = code;
     }
+}
 
-    const page = Math.max(1, params.page);
-    const limit = Math.min(100, Math.max(1, params.limit));
-    const skip = (page - 1) * limit;
+export function isDebtServiceError(error: Error): error is DebtServiceError {
+    return error instanceof DebtServiceError;
+}
 
-    const [items, total] = await Promise.all([
-        DebtModel.find(match).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit),
-        DebtModel.countDocuments(match),
-    ]);
+export async function getDebtsService(
+    workspaceId: Types.ObjectId
+): Promise<DebtDocument[]> {
+    return DebtModel.find({
+        workspaceId,
+    })
+        .sort({
+            startDate: -1,
+            createdAt: -1,
+        })
+        .lean<DebtDocument[]>();
+}
+
+export async function getDebtByIdService(
+    workspaceId: Types.ObjectId,
+    debtId: Types.ObjectId
+): Promise<DebtDocument | null> {
+    return findDebtById(workspaceId, debtId);
+}
+
+export async function createDebtService(
+    input: CreateDebtServiceInput
+): Promise<DebtDocument> {
+    const { workspaceId, body } = input;
+
+    const memberId = parseOptionalObjectId(body.memberId);
+    const relatedAccountId = parseOptionalObjectId(body.relatedAccountId);
+    const startDate = parseRequiredDate(body.startDate);
+    const dueDate = parseOptionalDate(body.dueDate);
+
+    validateAmounts(body.originalAmount, body.remainingAmount);
+    validateDates(startDate, dueDate);
+
+    const resolvedStatus = resolveDebtStatus(
+        body.status,
+        body.remainingAmount,
+        dueDate
+    );
+
+    const debt = await DebtModel.create({
+        workspaceId,
+        memberId,
+        relatedAccountId,
+        type: body.type,
+        personName: body.personName.trim(),
+        personContact: normalizeNullableString(body.personContact),
+        originalAmount: body.originalAmount,
+        remainingAmount: body.remainingAmount,
+        currency: body.currency,
+        description: body.description.trim(),
+        startDate,
+        dueDate,
+        status: resolvedStatus,
+        notes: normalizeNullableString(body.notes),
+        isVisible: body.isVisible ?? true,
+    });
 
     return {
-        items,
-        page,
-        limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit)),
+        _id: debt._id,
+        workspaceId: debt.workspaceId,
+        memberId: debt.memberId ?? null,
+        relatedAccountId: debt.relatedAccountId ?? null,
+        type: debt.type,
+        personName: debt.personName,
+        personContact: debt.personContact ?? null,
+        originalAmount: debt.originalAmount,
+        remainingAmount: debt.remainingAmount,
+        currency: debt.currency,
+        description: debt.description,
+        startDate: debt.startDate,
+        dueDate: debt.dueDate ?? null,
+        status: debt.status,
+        notes: debt.notes ?? null,
+        isVisible: debt.isVisible ?? true,
+        createdAt: debt.createdAt,
+        updatedAt: debt.updatedAt,
     };
 }
 
-export async function updateDebt(params: {
-    workspaceId: string;
-    debtId: string;
-    access: AccessContext;
-    patch: Partial<{
-        kind: "I_OWE" | "OWE_ME";
-        principal: number;
-        remaining: number;
-        counterparty: string;
-        dueDate: Date | null;
-        currency: "MXN" | "USD";
-        visibility: Visibility;
-        ownerUserId: string | null;
-        status: DebtStatus;
-        note: string | null;
-    }>;
-}) {
-    const debt = await DebtModel.findOne({
-        _id: toObjectId(params.debtId, "debtId"),
-        workspaceId: toObjectId(params.workspaceId, "workspaceId"),
-        isDeleted: false,
-    });
+export async function updateDebtService(
+    input: UpdateDebtServiceInput
+): Promise<DebtDocument | null> {
+    const { workspaceId, debtId, body } = input;
 
-    if (!debt) {
-        const e = new Error("Debt not found");
-        (e as { status?: number }).status = 404;
-        throw e;
+    const existingDebt = await findDebtById(workspaceId, debtId);
+
+    if (!existingDebt) {
+        return null;
     }
 
-    const createdBy = String(debt.createdByUserId);
-    const owner = debt.ownerUserId ? String(debt.ownerUserId) : null;
+    const nextOriginalAmount =
+        body.originalAmount !== undefined
+            ? body.originalAmount
+            : existingDebt.originalAmount;
 
-    if (
-        !canMutateDebt({
-            access: params.access,
-            visibility: debt.visibility,
-            ownerUserId: owner,
-            createdByUserId: createdBy,
-        })
-    ) {
-        const e = new Error("Forbidden");
-        (e as { status?: number }).status = 403;
-        throw e;
-    }
+    const nextRemainingAmount =
+        body.remainingAmount !== undefined
+            ? body.remainingAmount
+            : existingDebt.remainingAmount;
 
-    const nextVisibility = (params.patch.visibility ?? debt.visibility) as Visibility;
-    const nextOwnerUserId =
-        params.patch.ownerUserId === undefined ? owner : (params.patch.ownerUserId ?? null);
+    const nextStartDate =
+        body.startDate !== undefined
+            ? parseRequiredDate(body.startDate)
+            : existingDebt.startDate;
 
-    assertOwnerRules({ visibility: nextVisibility, ownerUserId: nextOwnerUserId });
+    const nextDueDate =
+        body.dueDate !== undefined
+            ? parseOptionalDate(body.dueDate)
+            : existingDebt.dueDate ?? null;
 
-    if (params.patch.kind !== undefined) debt.kind = params.patch.kind;
-    if (params.patch.counterparty !== undefined) debt.counterparty = params.patch.counterparty;
+    validateAmounts(nextOriginalAmount, nextRemainingAmount);
+    validateDates(nextStartDate, nextDueDate);
 
-    if (params.patch.currency !== undefined) debt.currency = params.patch.currency;
+    const nextStatus = resolveDebtStatus(
+        body.status !== undefined ? body.status : existingDebt.status,
+        nextRemainingAmount,
+        nextDueDate
+    );
 
-    if (params.patch.principal !== undefined) debt.principal = round2(params.patch.principal);
-    if (params.patch.remaining !== undefined) debt.remaining = round2(params.patch.remaining);
+    const updatedDebt = await DebtModel.findOneAndUpdate(
+        {
+            _id: debtId,
+            workspaceId,
+        },
+        {
+            $set: {
+                memberId:
+                    body.memberId !== undefined
+                        ? parseOptionalObjectId(body.memberId)
+                        : existingDebt.memberId ?? null,
+                relatedAccountId:
+                    body.relatedAccountId !== undefined
+                        ? parseOptionalObjectId(body.relatedAccountId)
+                        : existingDebt.relatedAccountId ?? null,
+                type: body.type !== undefined ? body.type : existingDebt.type,
+                personName:
+                    body.personName !== undefined
+                        ? body.personName.trim()
+                        : existingDebt.personName,
+                personContact:
+                    body.personContact !== undefined
+                        ? normalizeNullableString(body.personContact)
+                        : existingDebt.personContact ?? null,
+                originalAmount: nextOriginalAmount,
+                remainingAmount: nextRemainingAmount,
+                currency: body.currency !== undefined ? body.currency : existingDebt.currency,
+                description:
+                    body.description !== undefined
+                        ? body.description.trim()
+                        : existingDebt.description,
+                startDate: nextStartDate,
+                dueDate: nextDueDate,
+                status: nextStatus,
+                notes:
+                    body.notes !== undefined
+                        ? normalizeNullableString(body.notes)
+                        : existingDebt.notes ?? null,
+                isVisible:
+                    body.isVisible !== undefined
+                        ? body.isVisible
+                        : existingDebt.isVisible ?? true,
+            },
+        },
+        {
+            new: true,
+        }
+    ).lean<DebtDocument | null>();
 
-    if (params.patch.dueDate !== undefined) debt.dueDate = params.patch.dueDate ?? null;
-    if (params.patch.note !== undefined) debt.note = params.patch.note ?? null;
-
-    if (params.patch.visibility !== undefined) debt.visibility = params.patch.visibility;
-    if (params.patch.ownerUserId !== undefined) {
-        debt.ownerUserId = nextOwnerUserId ? toObjectId(nextOwnerUserId, "ownerUserId") : null;
-    }
-
-    if (params.patch.status !== undefined) debt.status = params.patch.status;
-
-    debt.updatedByUserId = toObjectId(params.access.actorUserId, "actorUserId");
-
-    await debt.save();
-    return debt;
+    return updatedDebt;
 }
 
-export async function softDeleteDebt(params: { workspaceId: string; debtId: string; access: AccessContext }) {
-    const debt = await DebtModel.findOne({
-        _id: toObjectId(params.debtId, "debtId"),
-        workspaceId: toObjectId(params.workspaceId, "workspaceId"),
-        isDeleted: false,
-    });
+export async function deleteDebtService(
+    input: DeleteDebtServiceInput
+): Promise<DebtDocument | null> {
+    const { workspaceId, debtId } = input;
 
-    if (!debt) {
-        const e = new Error("Debt not found");
-        (e as { status?: number }).status = 404;
-        throw e;
-    }
-
-    const createdBy = String(debt.createdByUserId);
-    const owner = debt.ownerUserId ? String(debt.ownerUserId) : null;
-
-    if (
-        !canMutateDebt({
-            access: params.access,
-            visibility: debt.visibility,
-            ownerUserId: owner,
-            createdByUserId: createdBy,
-        })
-    ) {
-        const e = new Error("Forbidden");
-        (e as { status?: number }).status = 403;
-        throw e;
-    }
-
-    debt.isDeleted = true;
-    debt.deletedAt = new Date();
-    debt.updatedByUserId = toObjectId(params.access.actorUserId, "actorUserId");
-
-    await debt.save();
-    return debt;
-}
-
-export async function restoreDebt(params: { workspaceId: string; debtId: string; access: AccessContext }) {
-    const debt = await DebtModel.findOne({
-        _id: toObjectId(params.debtId, "debtId"),
-        workspaceId: toObjectId(params.workspaceId, "workspaceId"),
-        isDeleted: true,
-    });
-
-    if (!debt) {
-        const e = new Error("Debt not found");
-        (e as { status?: number }).status = 404;
-        throw e;
-    }
-
-    const createdBy = String(debt.createdByUserId);
-    const owner = debt.ownerUserId ? String(debt.ownerUserId) : null;
-
-    if (
-        !canMutateDebt({
-            access: params.access,
-            visibility: debt.visibility,
-            ownerUserId: owner,
-            createdByUserId: createdBy,
-        })
-    ) {
-        const e = new Error("Forbidden");
-        (e as { status?: number }).status = 403;
-        throw e;
-    }
-
-    debt.isDeleted = false;
-    debt.deletedAt = null;
-    debt.updatedByUserId = toObjectId(params.access.actorUserId, "actorUserId");
-
-    await debt.save();
-    return debt;
+    return DebtModel.findOneAndDelete({
+        _id: debtId,
+        workspaceId,
+    }).lean<DebtDocument | null>();
 }

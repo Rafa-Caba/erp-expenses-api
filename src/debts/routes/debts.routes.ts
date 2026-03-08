@@ -1,34 +1,69 @@
 // src/debts/routes/debts.routes.ts
 
 import { Router } from "express";
-import { requireAuth } from "@/src/middlewares/requireAuth";
-import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
 
 import {
-    handleCreateDebt,
-    handleDeleteDebt,
-    handleGetDebt,
-    handleListDebts,
-    handleRestoreDebt,
-    handleUpdateDebt,
-} from "@/src/debts/controllers/debts.controller";
+    createDebtController,
+    deleteDebtController,
+    getDebtByIdController,
+    getDebtsController,
+    updateDebtController,
+} from "../controllers/debts.controller";
+import {
+    createDebtSchema,
+    debtParamsSchema,
+    updateDebtSchema,
+    workspaceDebtParamsSchema,
+} from "../schemas/debt.schemas";
+import type {
+    CreateDebtBody,
+    DebtParams,
+    UpdateDebtBody,
+    WorkspaceDebtParams,
+} from "../types/debts.types";
+import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
+import { requireWorkspacePermission } from "@/src/middlewares/requireWorkspacePermission";
+import { validateRequest } from "@/src/middlewares/validateRequest";
 
-import { handleCreateDebtPayment } from "@/src/debts/controllers/debtPayments.controller";
+const debtRouter = Router({ mergeParams: true });
 
-export const debtsRouter = Router({ mergeParams: true });
+debtRouter.use(requireWorkspaceAccess());
 
-debtsRouter.use(requireAuth);
-debtsRouter.use(requireWorkspaceAccess("workspaceId"));
+debtRouter.get<WorkspaceDebtParams>(
+    "/",
+    validateRequest(workspaceDebtParamsSchema),
+    requireWorkspacePermission("debts.read"),
+    getDebtsController
+);
 
-// Debts CRUD
-debtsRouter.get("/", handleListDebts);
-debtsRouter.post("/", handleCreateDebt);
+debtRouter.get<DebtParams>(
+    "/:debtId",
+    validateRequest(debtParamsSchema),
+    requireWorkspacePermission("debts.read"),
+    getDebtByIdController
+);
 
-debtsRouter.get("/:debtId", handleGetDebt);
-debtsRouter.patch("/:debtId", handleUpdateDebt);
+debtRouter.post<WorkspaceDebtParams, object, CreateDebtBody>(
+    "/",
+    validateRequest(workspaceDebtParamsSchema),
+    validateRequest(createDebtSchema),
+    requireWorkspacePermission("debts.create"),
+    createDebtController
+);
 
-debtsRouter.delete("/:debtId", handleDeleteDebt);
-debtsRouter.patch("/:debtId/restore", handleRestoreDebt);
+debtRouter.patch<DebtParams, object, UpdateDebtBody>(
+    "/:debtId",
+    validateRequest(debtParamsSchema),
+    validateRequest(updateDebtSchema),
+    requireWorkspacePermission("debts.update"),
+    updateDebtController
+);
 
-// Payments
-debtsRouter.post("/:debtId/payments", handleCreateDebtPayment);
+debtRouter.delete<DebtParams>(
+    "/:debtId",
+    validateRequest(debtParamsSchema),
+    requireWorkspacePermission("debts.delete"),
+    deleteDebtController
+);
+
+export { debtRouter };
