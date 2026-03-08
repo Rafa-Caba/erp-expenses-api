@@ -39,6 +39,11 @@ export const workspacePermissionValues = [
     "debts.update",
     "debts.delete",
     "debts.pay",
+
+    "payments.read",
+    "payments.create",
+    "payments.update",
+    "payments.delete",
 ] as const;
 
 export type WorkspacePermission = (typeof workspacePermissionValues)[number];

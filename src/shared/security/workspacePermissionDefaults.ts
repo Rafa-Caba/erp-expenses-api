@@ -31,6 +31,11 @@ const memberPermissions: WorkspacePermission[] = [
     "debts.create",
     "debts.update",
     "debts.pay",
+
+    "payments.read",
+    "payments.create",
+    "payments.update",
+    "payments.delete",
 ];
 
 const viewerPermissions: WorkspacePermission[] = [
