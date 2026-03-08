@@ -1,3 +1,5 @@
+// src/auth/types/auth.types.ts
+
 import type { UserRole } from "@/src/users/types/user.types";
 
 export interface AuthAccessTokenPayload {
@@ -60,6 +62,7 @@ export interface RegisterPayload {
 	password: string;
 	phone?: string | null;
 	avatarUrl?: string | null;
+	avatarPublicId?: string | null;
 }
 
 export interface RefreshTokenPayload {
@@ -74,6 +77,12 @@ export interface UpdateMePayload {
 	fullName?: string;
 	phone?: string | null;
 	avatarUrl?: string | null;
+	avatarPublicId?: string | null;
+}
+
+export interface UploadedProfileImageFile extends Express.Multer.File {
+	path: string;
+	filename: string;
 }
 
 export interface ChangePasswordPayload {
@@ -127,12 +136,6 @@ export interface ChangePasswordResponse extends MessageResponse {
 export interface LogoutResponse extends MessageResponse { }
 
 export interface LogoutAllResponse extends MessageResponse { }
-
-export interface AuthenticatedUser {
-	id: string;
-	email: string;
-	role: UserRole;
-}
 
 export type AuthenticatedLocals = {
 	auth?: AuthenticatedUser;

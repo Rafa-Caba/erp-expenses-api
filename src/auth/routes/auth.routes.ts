@@ -1,3 +1,5 @@
+// src/auth/routes/auth.routes.ts
+
 import { Router } from "express";
 
 import {
@@ -14,8 +16,9 @@ import {
     updateMeAuthController,
     verifyEmailAuthController,
 } from "@/src/auth/controllers/auth.controller";
-import { requireAdmin } from "@/src/middlewares/requireAdmin";
 import { verifyAccessToken } from "@/src/auth/auth.middleware";
+import { uploadUserProfileImage } from "@/src/middlewares/cloudinaryUploads";
+import { requireAdmin } from "@/src/middlewares/requireAdmin";
 
 const authRouter = Router();
 
@@ -25,7 +28,12 @@ authRouter.post("/refresh", refreshAuthController);
 authRouter.post("/logout", logoutAuthController);
 
 authRouter.get("/me", verifyAccessToken, meAuthController);
-authRouter.patch("/me", verifyAccessToken, updateMeAuthController);
+authRouter.patch(
+    "/me",
+    verifyAccessToken,
+    uploadUserProfileImage.single("avatar"),
+    updateMeAuthController
+);
 authRouter.patch("/change-password", verifyAccessToken, changePasswordAuthController);
 authRouter.post("/logout-all", verifyAccessToken, logoutAllAuthController);
 

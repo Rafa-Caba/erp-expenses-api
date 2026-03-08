@@ -1,3 +1,5 @@
+// src/auth/controllers/auth.controller.ts
+
 import type { RequestHandler } from "express";
 import { ZodError } from "zod";
 
@@ -27,10 +29,28 @@ import {
     updateMeAuthService,
     verifyEmailAuthService,
 } from "@/src/auth/services/auth.service";
-import type { AuthenticatedUser } from "@/src/auth/types/auth.types";
+import type {
+    AuthenticatedUser,
+    ChangePasswordPayload,
+    ForgotPasswordPayload,
+    LoginPayload,
+    LogoutPayload,
+    RefreshTokenPayload,
+    RegisterPayload,
+    ResendVerificationPayload,
+    ResetPasswordPayload,
+    UpdateMePayload,
+    UploadedProfileImageFile,
+    VerifyEmailPayload,
+} from "@/src/auth/types/auth.types";
 
 type LocalsWithAuth = {
     auth?: AuthenticatedUser;
+};
+
+type UpdateMeMultipartBody = {
+    fullName?: string;
+    phone?: string | null;
 };
 
 function handleZodError(error: ZodError) {
@@ -53,7 +73,27 @@ function getSessionMeta(req: {
     };
 }
 
-export const registerAuthController: RequestHandler = (req, res, next) => {
+function getUploadedProfileImage(
+    file: Express.Multer.File | undefined
+): UploadedProfileImageFile | undefined {
+    if (!file) {
+        return undefined;
+    }
+
+    const candidateFile = file as UploadedProfileImageFile;
+
+    if (!candidateFile.path || !candidateFile.filename) {
+        return undefined;
+    }
+
+    return candidateFile;
+}
+
+export const registerAuthController: RequestHandler<
+    Record<string, never>,
+    object,
+    RegisterPayload
+> = (req, res, next) => {
     const parsedBody = registerSchema.safeParse(req.body);
 
     if (!parsedBody.success) {
@@ -75,7 +115,11 @@ export const registerAuthController: RequestHandler = (req, res, next) => {
         .catch(next);
 };
 
-export const loginAuthController: RequestHandler = (req, res, next) => {
+export const loginAuthController: RequestHandler<
+    Record<string, never>,
+    object,
+    LoginPayload
+> = (req, res, next) => {
     const parsedBody = loginSchema.safeParse(req.body);
 
     if (!parsedBody.success) {
@@ -101,7 +145,11 @@ export const loginAuthController: RequestHandler = (req, res, next) => {
         .catch(next);
 };
 
-export const refreshAuthController: RequestHandler = (req, res, next) => {
+export const refreshAuthController: RequestHandler<
+    Record<string, never>,
+    object,
+    RefreshTokenPayload
+> = (req, res, next) => {
     const parsedBody = refreshTokenSchema.safeParse(req.body);
 
     if (!parsedBody.success) {
@@ -131,7 +179,11 @@ export const refreshAuthController: RequestHandler = (req, res, next) => {
         .catch(next);
 };
 
-export const logoutAuthController: RequestHandler = (req, res, next) => {
+export const logoutAuthController: RequestHandler<
+    Record<string, never>,
+    object,
+    LogoutPayload
+> = (req, res, next) => {
     const parsedBody = logoutSchema.safeParse(req.body);
 
     if (!parsedBody.success) {
@@ -210,7 +262,7 @@ export const meAuthController: RequestHandler<
 export const updateMeAuthController: RequestHandler<
     Record<string, never>,
     object,
-    object,
+    UpdateMeMultipartBody,
     object,
     LocalsWithAuth
 > = (req, res, next) => {
@@ -223,13 +275,34 @@ export const updateMeAuthController: RequestHandler<
         });
     }
 
-    const parsedBody = updateMeSchema.safeParse(req.body);
+    const uploadedProfileImage = getUploadedProfileImage(req.file);
+
+    const payloadToValidate: UpdateMePayload = {
+        ...(typeof req.body.fullName !== "undefined" ? { fullName: req.body.fullName } : {}),
+        ...(typeof req.body.phone !== "undefined" ? { phone: req.body.phone } : {}),
+        ...(uploadedProfileImage
+            ? {
+                avatarUrl: uploadedProfileImage.path,
+                avatarPublicId: uploadedProfileImage.filename,
+            }
+            : {}),
+    };
+
+    const parsedBody = updateMeSchema.safeParse(payloadToValidate);
 
     if (!parsedBody.success) {
         return res.status(400).json(handleZodError(parsedBody.error));
     }
 
-    return updateMeAuthService(auth.id, parsedBody.data)
+    const servicePayload: UpdateMePayload = uploadedProfileImage
+        ? {
+            ...parsedBody.data,
+            avatarUrl: uploadedProfileImage.path,
+            avatarPublicId: uploadedProfileImage.filename,
+        }
+        : parsedBody.data;
+
+    return updateMeAuthService(auth.id, servicePayload)
         .then((result) => {
             if (!result.ok) {
                 if (result.error.code === "USER_NOT_FOUND") {
@@ -247,7 +320,7 @@ export const updateMeAuthController: RequestHandler<
 export const changePasswordAuthController: RequestHandler<
     Record<string, never>,
     object,
-    object,
+    ChangePasswordPayload,
     object,
     LocalsWithAuth
 > = (req, res, next) => {
@@ -285,7 +358,11 @@ export const changePasswordAuthController: RequestHandler<
         .catch(next);
 };
 
-export const forgotPasswordAuthController: RequestHandler = (req, res, next) => {
+export const forgotPasswordAuthController: RequestHandler<
+    Record<string, never>,
+    object,
+    ForgotPasswordPayload
+> = (req, res, next) => {
     const parsedBody = forgotPasswordSchema.safeParse(req.body);
 
     if (!parsedBody.success) {
@@ -303,7 +380,11 @@ export const forgotPasswordAuthController: RequestHandler = (req, res, next) => 
         .catch(next);
 };
 
-export const resetPasswordAuthController: RequestHandler = (req, res, next) => {
+export const resetPasswordAuthController: RequestHandler<
+    Record<string, never>,
+    object,
+    ResetPasswordPayload
+> = (req, res, next) => {
     const parsedBody = resetPasswordSchema.safeParse(req.body);
 
     if (!parsedBody.success) {
@@ -325,7 +406,11 @@ export const resetPasswordAuthController: RequestHandler = (req, res, next) => {
         .catch(next);
 };
 
-export const verifyEmailAuthController: RequestHandler = (req, res, next) => {
+export const verifyEmailAuthController: RequestHandler<
+    Record<string, never>,
+    object,
+    VerifyEmailPayload
+> = (req, res, next) => {
     const parsedBody = verifyEmailSchema.safeParse(req.body);
 
     if (!parsedBody.success) {
@@ -347,7 +432,11 @@ export const verifyEmailAuthController: RequestHandler = (req, res, next) => {
         .catch(next);
 };
 
-export const resendVerificationAuthController: RequestHandler = (req, res, next) => {
+export const resendVerificationAuthController: RequestHandler<
+    Record<string, never>,
+    object,
+    ResendVerificationPayload
+> = (req, res, next) => {
     const parsedBody = resendVerificationSchema.safeParse(req.body);
 
     if (!parsedBody.success) {

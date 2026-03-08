@@ -1,3 +1,5 @@
+// src/users/models/User.model.ts
+
 import mongoose, { Schema, type InferSchemaType, type Model } from "mongoose";
 import { applyToJsonTransform } from "@/src/shared/models/toJson";
 
@@ -28,6 +30,11 @@ const UserSchema = new Schema(
             default: null,
         },
         avatarUrl: {
+            type: String,
+            trim: true,
+            default: null,
+        },
+        avatarPublicId: {
             type: String,
             trim: true,
             default: null,

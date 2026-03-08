@@ -1,3 +1,5 @@
+// src/auth/services/auth.service.ts
+
 import bcrypt from "bcryptjs";
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import { createHash, randomBytes } from "node:crypto";
@@ -5,6 +7,7 @@ import type { StringValue } from "ms";
 
 import { RefreshTokenModel } from "@/src/auth/models/RefreshToken.model";
 import { UserModel } from "@/src/users/models/User.model";
+import { deleteFromCloudinary } from "@/src/middlewares/cloudinaryUploads";
 import type {
     AuthAccessTokenPayload,
     AuthRefreshTokenPayload,
@@ -79,6 +82,7 @@ type AuthUserLike = IdLike & {
     email: string;
     phone?: string | null;
     avatarUrl?: string | null;
+    avatarPublicId?: string | null;
     role: UserRole;
     isActive: boolean;
     isEmailVerified: boolean;
@@ -98,7 +102,12 @@ function isProduction(): boolean {
 }
 
 function normalizeNullableString(value: string | null | undefined): string | null {
-    return typeof value === "string" ? value : null;
+    if (typeof value !== "string") {
+        return null;
+    }
+
+    const normalizedValue = value.trim();
+    return normalizedValue.length > 0 ? normalizedValue : null;
 }
 
 function normalizeNullableDate(value: Date | null | undefined): Date | null {
@@ -517,6 +526,7 @@ export async function registerAuthService(
         passwordHash,
         phone: input.phone ?? null,
         avatarUrl: input.avatarUrl ?? null,
+        avatarPublicId: input.avatarPublicId ?? null,
         role: "USER",
         isActive: true,
         isEmailVerified: false,
@@ -785,7 +795,22 @@ export async function updateMeAuthService(
     }
 
     if (typeof input.avatarUrl !== "undefined") {
-        user.avatarUrl = input.avatarUrl;
+        const nextAvatarUrl = normalizeNullableString(input.avatarUrl);
+        const nextAvatarPublicId =
+            typeof input.avatarPublicId !== "undefined"
+                ? normalizeNullableString(input.avatarPublicId)
+                : user.avatarPublicId ?? null;
+
+        const shouldDeletePreviousAvatar =
+            Boolean(user.avatarPublicId) &&
+            user.avatarPublicId !== nextAvatarPublicId;
+
+        if (shouldDeletePreviousAvatar && user.avatarPublicId) {
+            await deleteFromCloudinary(user.avatarPublicId, "image");
+        }
+
+        user.avatarUrl = nextAvatarUrl;
+        user.avatarPublicId = nextAvatarPublicId;
     }
 
     await user.save();

@@ -1,3 +1,5 @@
+// src/users/types/user.types.ts
+
 export type UserRole = "USER" | "ADMIN";
 
 export interface UserEntity {
@@ -8,6 +10,7 @@ export interface UserEntity {
 
     phone: string | null;
     avatarUrl: string | null;
+    avatarPublicId: string | null;
 
     role: UserRole;
 
@@ -46,6 +49,7 @@ export type CreateUserInput = {
     password: string;
     phone?: string | null;
     avatarUrl?: string | null;
+    avatarPublicId?: string | null;
     role?: UserRole;
     isActive?: boolean;
     isEmailVerified?: boolean;
@@ -56,6 +60,7 @@ export type UpdateUserInput = Partial<{
     email: string;
     phone: string | null;
     avatarUrl: string | null;
+    avatarPublicId: string | null;
     role: UserRole;
     isActive: boolean;
     isEmailVerified: boolean;
