@@ -29,6 +29,7 @@ import { validateRequest } from "@/src/middlewares/validateRequest";
 import { verifyToken } from "@/src/middlewares/verifyToken";
 import { debtRouter } from "@/src/debts/routes/debts.routes";
 import { paymentRouter } from "@/src/payments/routes/payments.routes";
+import { budgetRouter } from "@/src/budgets/routes/budgets.routes";
 
 const workspacesRouter = Router();
 
@@ -43,6 +44,7 @@ workspacesRouter.use("/:workspaceId/transactions", transactionRouter);
 workspacesRouter.use("/:workspaceId/receipts", receiptRouter);
 workspacesRouter.use("/:workspaceId/debts", debtRouter);
 workspacesRouter.use("/:workspaceId/payments", paymentRouter);
+workspacesRouter.use("/:workspaceId/budgets", budgetRouter);
 
 workspacesRouter.get("/", getWorkspacesController);
 
