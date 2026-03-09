@@ -49,6 +49,16 @@ export const workspacePermissionValues = [
     "savingGoals.create",
     "savingGoals.update",
     "savingGoals.delete",
+
+    "reminders.read",
+    "reminders.create",
+    "reminders.update",
+    "reminders.delete",
+
+    "reports.read",
+    "reports.create",
+    "reports.update",
+    "reports.delete",
 ] as const;
 
 export type WorkspacePermission = (typeof workspacePermissionValues)[number];
