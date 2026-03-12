@@ -1,0 +1,14 @@
+"section","label","value","categoryId","totalAmount","transactionCount","income","expenses","debtPayments","transfers","adjustments","netBalance"
+"totals","income","15000",,,,,,,,,
+"totals","expenses","0",,,,,,,,,
+"totals","debtPayments","1200",,,,,,,,,
+"totals","transfers","500",,,,,,,,,
+"totals","adjustments","0",,,,,,,,,
+"totals","netBalance","13800",,,,,,,,,
+"counts","income","1",,,,,,,,,
+"counts","expenses","0",,,,,,,,,
+"counts","debtPayments","1",,,,,,,,,
+"counts","transfers","1",,,,,,,,,
+"counts","adjustments","0",,,,,,,,,
+"counts","total","3",,,,,,,,,
+"series","2026-03",,,,"3","15000","0","1200","500","0","13800"

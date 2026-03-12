@@ -171,6 +171,50 @@ const updateReportBodySchema = z.object({
         ),
 });
 
+const analyticsQuerySchema = z
+    .object({
+        dateFrom: nullableTrimmedStringSchema.refine(
+            (value) => value === undefined || value === null || isValidDateString(value),
+            {
+                message: "La fecha inicial no es válida.",
+            }
+        ),
+        dateTo: nullableTrimmedStringSchema.refine(
+            (value) => value === undefined || value === null || isValidDateString(value),
+            {
+                message: "La fecha final no es válida.",
+            }
+        ),
+        currency: z.enum(["MXN", "USD"]).nullable().optional(),
+        memberId: nullableTrimmedStringSchema,
+        categoryId: nullableTrimmedStringSchema,
+        accountId: nullableTrimmedStringSchema,
+        cardId: nullableTrimmedStringSchema,
+        includeArchived: z
+            .union([
+                z.literal("true").transform(() => true),
+                z.literal("false").transform(() => false),
+                z.boolean(),
+                z.null(),
+            ])
+            .optional(),
+        groupBy: z.enum(REPORT_GROUP_BY_VALUES).nullable().optional(),
+    })
+    .superRefine((query, ctx) => {
+        if (query.dateFrom && query.dateTo) {
+            const parsedDateFrom = new Date(query.dateFrom);
+            const parsedDateTo = new Date(query.dateTo);
+
+            if (parsedDateTo.getTime() < parsedDateFrom.getTime()) {
+                ctx.addIssue({
+                    code: "custom",
+                    path: ["dateTo"],
+                    message: "La fecha final no puede ser anterior a la fecha inicial.",
+                });
+            }
+        }
+    });
+
 export const workspaceReportParamsSchema = z.object({
     params: z.object({
         workspaceId: z.string().trim().min(1, "El id del workspace es obligatorio."),
@@ -182,6 +226,10 @@ export const reportParamsSchema = z.object({
         workspaceId: z.string().trim().min(1, "El id del workspace es obligatorio."),
         reportId: z.string().trim().min(1, "El id del reporte es obligatorio."),
     }),
+});
+
+export const reportAnalyticsQueryRequestSchema = z.object({
+    query: analyticsQuerySchema,
 });
 
 export const createReportSchema = z.object({

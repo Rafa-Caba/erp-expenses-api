@@ -1,0 +1,9 @@
+"section","label","value","budgetId","currency","limitAmount","spentAmount","remainingAmount","usagePercent","hasReachedAlert","isExceeded","matchedTransactionCount","computedStatus","startDate","endDate","categoryId","memberId","totalLimitAmount","totalSpentAmount","totalRemainingAmount"
+"totals","budgetCount","1",,,,,,,,,,,,,,,,,
+"totals","totalLimitAmount","1500",,,,,,,,,,,,,,,,,
+"totals","totalSpentAmount","0",,,,,,,,,,,,,,,,,
+"totals","totalRemainingAmount","1500",,,,,,,,,,,,,,,,,
+"totals","exceededCount","0",,,,,,,,,,,,,,,,,
+"totals","alertReachedCount","0",,,,,,,,,,,,,,,,,
+"budgets","Food Budget For Member",,"69aedef8692511c35e4c7391","MXN","1500","0","1500","0","false","false","0","active","2026-03-01T00:00:00.000Z","2026-03-31T23:59:59.999Z","69ab69fc154ed33a5365859d","69ab1f3d0624322000570c9a",,,
+"series","2026-03",,,,,,,,,,,,,,,,"1500","0","1500"
