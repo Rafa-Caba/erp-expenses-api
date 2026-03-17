@@ -1,15 +1,12 @@
-// src/reports/services/reports.service.ts
-
 import { Types } from "mongoose";
 
 import { BudgetModel } from "@/src/budgets/models/Budget.model";
 import type { BudgetDocument, BudgetStatus } from "@/src/budgets/types/budgets.types";
 import { CategoryModel } from "@/src/categories/models/Category.model";
 import { DebtModel } from "@/src/debts/models/Debt.model";
-import { deleteFromCloudinary } from "@/src/middlewares/cloudinaryUploads";
 import { PaymentModel } from "@/src/payments/models/Payment.model";
-import type { CurrencyCode } from "@/src/shared/types/common";
 import { TransactionModel } from "@/src/transactions/models/Transaction.model";
+import type { CurrencyCode } from "@/src/shared/types/common";
 import { WorkspaceMemberModel } from "@/src/workspaces/models/WorkspaceMember.model";
 import { ReportModel } from "../models/Report.model";
 import type {
@@ -29,7 +26,6 @@ import type {
     ReportAnalyticsQuery,
     ReportDocument,
     ReportFilters,
-    ReportFileResourceType,
     ReportGroupBy,
     ReportStatus,
     UpdateReportServiceInput,
@@ -113,12 +109,6 @@ function normalizeNullableString(value: string | null | undefined): string | nul
 
     const normalizedValue = value.trim();
     return normalizedValue.length > 0 ? normalizedValue : null;
-}
-
-function normalizeReportFileResourceType(
-    value: ReportFileResourceType | null | undefined
-): ReportFileResourceType | null {
-    return value ?? null;
 }
 
 function parseOptionalObjectId(value: string | null | undefined): OptionalObjectId {
@@ -261,27 +251,10 @@ function buildReportResponse(report: ReportDocument): ReportDocument {
         filters: report.filters ?? null,
         generatedByMemberId: report.generatedByMemberId ?? null,
         fileUrl: report.fileUrl ?? null,
-        filePublicId: report.filePublicId ?? null,
-        fileResourceType: report.fileResourceType ?? null,
-        fileName: report.fileName ?? null,
-        fileFormat: report.fileFormat ?? null,
         notes: report.notes ?? null,
         isVisible: report.isVisible ?? true,
         generatedAt: report.generatedAt ?? null,
     };
-}
-
-async function deleteStoredReportFileIfNeeded(
-    report: Pick<ReportDocument, "filePublicId" | "fileResourceType">
-): Promise<void> {
-    if (!report.filePublicId) {
-        return;
-    }
-
-    await deleteFromCloudinary(
-        report.filePublicId,
-        report.fileResourceType ?? "raw"
-    );
 }
 
 async function findReportById(
@@ -501,10 +474,6 @@ export async function createReportService(
         filters: normalizedFilters,
         generatedByMemberId,
         fileUrl: normalizeNullableString(body.fileUrl),
-        filePublicId: normalizeNullableString(body.filePublicId),
-        fileResourceType: normalizeReportFileResourceType(body.fileResourceType),
-        fileName: normalizeNullableString(body.fileName),
-        fileFormat: normalizeNullableString(body.fileFormat),
         notes: normalizeNullableString(body.notes),
         status: resolvedStatus,
         isVisible: body.isVisible ?? true,
@@ -519,10 +488,6 @@ export async function createReportService(
         filters: report.filters ?? null,
         generatedByMemberId: report.generatedByMemberId ?? null,
         fileUrl: report.fileUrl ?? null,
-        filePublicId: report.filePublicId ?? null,
-        fileResourceType: report.fileResourceType ?? null,
-        fileName: report.fileName ?? null,
-        fileFormat: report.fileFormat ?? null,
         notes: report.notes ?? null,
         status: report.status,
         isVisible: report.isVisible ?? true,
@@ -558,31 +523,6 @@ export async function updateReportService(
             ? parseOptionalDate(body.generatedAt)
             : existingReport.generatedAt ?? null;
 
-    const nextFileUrl =
-        body.fileUrl !== undefined
-            ? normalizeNullableString(body.fileUrl)
-            : existingReport.fileUrl ?? null;
-
-    const nextFilePublicId =
-        body.filePublicId !== undefined
-            ? normalizeNullableString(body.filePublicId)
-            : existingReport.filePublicId ?? null;
-
-    const nextFileResourceType =
-        body.fileResourceType !== undefined
-            ? normalizeReportFileResourceType(body.fileResourceType)
-            : existingReport.fileResourceType ?? null;
-
-    const nextFileName =
-        body.fileName !== undefined
-            ? normalizeNullableString(body.fileName)
-            : existingReport.fileName ?? null;
-
-    const nextFileFormat =
-        body.fileFormat !== undefined
-            ? normalizeNullableString(body.fileFormat)
-            : existingReport.fileFormat ?? null;
-
     validateFilters(nextFilters);
     await validateGeneratedByMemberIfProvided(workspaceId, nextGeneratedByMemberId);
 
@@ -595,11 +535,6 @@ export async function updateReportService(
         nextStatus,
         nextGeneratedAt
     );
-
-    const shouldDeleteExistingCloudinaryFile =
-        Boolean(existingReport.filePublicId) &&
-        body.filePublicId !== undefined &&
-        nextFilePublicId !== existingReport.filePublicId;
 
     const updatedReport = await ReportModel.findOneAndUpdate(
         {
@@ -618,11 +553,10 @@ export async function updateReportService(
                         : existingReport.type,
                 filters: nextFilters,
                 generatedByMemberId: nextGeneratedByMemberId,
-                fileUrl: nextFileUrl,
-                filePublicId: nextFilePublicId,
-                fileResourceType: nextFileResourceType,
-                fileName: nextFileName,
-                fileFormat: nextFileFormat,
+                fileUrl:
+                    body.fileUrl !== undefined
+                        ? normalizeNullableString(body.fileUrl)
+                        : existingReport.fileUrl ?? null,
                 notes:
                     body.notes !== undefined
                         ? normalizeNullableString(body.notes)
@@ -644,13 +578,6 @@ export async function updateReportService(
         return null;
     }
 
-    if (shouldDeleteExistingCloudinaryFile) {
-        await deleteStoredReportFileIfNeeded({
-            filePublicId: existingReport.filePublicId ?? null,
-            fileResourceType: existingReport.fileResourceType ?? null,
-        });
-    }
-
     return buildReportResponse(updatedReport);
 }
 
@@ -659,21 +586,10 @@ export async function deleteReportService(
 ): Promise<ReportDocument | null> {
     const { workspaceId, reportId } = input;
 
-    const deletedReport = await ReportModel.findOneAndDelete({
+    return ReportModel.findOneAndDelete({
         _id: reportId,
         workspaceId,
     }).lean<ReportDocument | null>();
-
-    if (!deletedReport) {
-        return null;
-    }
-
-    await deleteStoredReportFileIfNeeded({
-        filePublicId: deletedReport.filePublicId ?? null,
-        fileResourceType: deletedReport.fileResourceType ?? null,
-    });
-
-    return buildReportResponse(deletedReport);
 }
 
 export async function getMonthlySummaryReportService(
@@ -1242,6 +1158,55 @@ async function computeBudgetSummaryItem(
     };
 }
 
+function budgetMatchesBucket(
+    budget: BudgetSummaryItem,
+    label: string,
+    groupBy: "day" | "week" | "month"
+): boolean {
+    const bucketLabels = new Set<string>();
+
+    if (groupBy === "day") {
+        let currentDate = getUtcDateStart(budget.startDate);
+        const endDate = getUtcDateStart(budget.endDate);
+
+        while (currentDate.getTime() <= endDate.getTime()) {
+            bucketLabels.add(formatDayLabel(currentDate));
+            currentDate = new Date(currentDate.getTime() + 86400000);
+        }
+    } else if (groupBy === "week") {
+        let currentDate = getUtcDateStart(budget.startDate);
+        const endDate = getUtcDateStart(budget.endDate);
+
+        while (currentDate.getTime() <= endDate.getTime()) {
+            bucketLabels.add(formatWeekLabel(currentDate));
+            currentDate = new Date(currentDate.getTime() + 86400000);
+        }
+    } else {
+        let currentDate = new Date(Date.UTC(
+            budget.startDate.getUTCFullYear(),
+            budget.startDate.getUTCMonth(),
+            1
+        ));
+
+        const endDate = new Date(Date.UTC(
+            budget.endDate.getUTCFullYear(),
+            budget.endDate.getUTCMonth(),
+            1
+        ));
+
+        while (currentDate.getTime() <= endDate.getTime()) {
+            bucketLabels.add(formatMonthLabel(currentDate));
+            currentDate = new Date(Date.UTC(
+                currentDate.getUTCFullYear(),
+                currentDate.getUTCMonth() + 1,
+                1
+            ));
+        }
+    }
+
+    return bucketLabels.has(label);
+}
+
 export async function getBudgetSummaryReportService(
     workspaceId: Types.ObjectId,
     query: ReportAnalyticsQuery
@@ -1318,31 +1283,25 @@ export async function getBudgetSummaryReportService(
                     currentDate = new Date(currentDate.getTime() + 86400000);
                 }
             } else {
-                let currentDate = new Date(
-                    Date.UTC(
-                        budget.startDate.getUTCFullYear(),
-                        budget.startDate.getUTCMonth(),
-                        1
-                    )
-                );
+                let currentDate = new Date(Date.UTC(
+                    budget.startDate.getUTCFullYear(),
+                    budget.startDate.getUTCMonth(),
+                    1
+                ));
 
-                const endDate = new Date(
-                    Date.UTC(
-                        budget.endDate.getUTCFullYear(),
-                        budget.endDate.getUTCMonth(),
-                        1
-                    )
-                );
+                const endDate = new Date(Date.UTC(
+                    budget.endDate.getUTCFullYear(),
+                    budget.endDate.getUTCMonth(),
+                    1
+                ));
 
                 while (currentDate.getTime() <= endDate.getTime()) {
                     labelsForBudget.add(formatMonthLabel(currentDate));
-                    currentDate = new Date(
-                        Date.UTC(
-                            currentDate.getUTCFullYear(),
-                            currentDate.getUTCMonth() + 1,
-                            1
-                        )
-                    );
+                    currentDate = new Date(Date.UTC(
+                        currentDate.getUTCFullYear(),
+                        currentDate.getUTCMonth() + 1,
+                        1
+                    ));
                 }
             }
 

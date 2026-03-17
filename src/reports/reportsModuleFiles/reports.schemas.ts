@@ -1,9 +1,6 @@
-// src/reports/schemas/reports.schemas.ts
-
 import { z } from "zod";
 
 import {
-    REPORT_FILE_RESOURCE_TYPE_VALUES,
     REPORT_GROUP_BY_VALUES,
     REPORT_STATUS_VALUES,
     REPORT_TYPE_VALUES,
@@ -91,61 +88,6 @@ const createReportBodySchema = z.object({
     fileUrl: z
         .union([z.string().url("El fileUrl no es válido."), z.null()])
         .optional(),
-    filePublicId: z
-        .union([z.string(), z.null()])
-        .optional()
-        .transform((value) => {
-            if (value === undefined || value === null) {
-                return value;
-            }
-
-            const normalizedValue = value.trim();
-            return normalizedValue.length > 0 ? normalizedValue : null;
-        })
-        .refine(
-            (value) => value === undefined || value === null || value.length <= 500,
-            {
-                message: "El filePublicId no puede exceder 500 caracteres.",
-            }
-        ),
-    fileResourceType: z
-        .enum(REPORT_FILE_RESOURCE_TYPE_VALUES)
-        .nullable()
-        .optional(),
-    fileName: z
-        .union([z.string(), z.null()])
-        .optional()
-        .transform((value) => {
-            if (value === undefined || value === null) {
-                return value;
-            }
-
-            const normalizedValue = value.trim();
-            return normalizedValue.length > 0 ? normalizedValue : null;
-        })
-        .refine(
-            (value) => value === undefined || value === null || value.length <= 255,
-            {
-                message: "El fileName no puede exceder 255 caracteres.",
-            }
-        ),
-    fileFormat: z
-        .union([z.string(), z.null()])
-        .optional()
-        .transform((value) => {
-            if (value === undefined || value === null) {
-                return value;
-            }
-
-            const normalizedValue = value.trim().toLowerCase();
-            return normalizedValue.length > 0 ? normalizedValue : null;
-        })
-        .refine(
-            (value) => value === undefined || value === null || value.length <= 20,
-            {
-                message: "El fileFormat no puede exceder 20 caracteres.",
-            }
-        ),
     notes: z
         .union([z.string(), z.null()])
         .optional()
@@ -196,61 +138,6 @@ const updateReportBodySchema = z.object({
     fileUrl: z
         .union([z.string().url("El fileUrl no es válido."), z.null()])
         .optional(),
-    filePublicId: z
-        .union([z.string(), z.null()])
-        .optional()
-        .transform((value) => {
-            if (value === undefined || value === null) {
-                return value;
-            }
-
-            const normalizedValue = value.trim();
-            return normalizedValue.length > 0 ? normalizedValue : null;
-        })
-        .refine(
-            (value) => value === undefined || value === null || value.length <= 500,
-            {
-                message: "El filePublicId no puede exceder 500 caracteres.",
-            }
-        ),
-    fileResourceType: z
-        .enum(REPORT_FILE_RESOURCE_TYPE_VALUES)
-        .nullable()
-        .optional(),
-    fileName: z
-        .union([z.string(), z.null()])
-        .optional()
-        .transform((value) => {
-            if (value === undefined || value === null) {
-                return value;
-            }
-
-            const normalizedValue = value.trim();
-            return normalizedValue.length > 0 ? normalizedValue : null;
-        })
-        .refine(
-            (value) => value === undefined || value === null || value.length <= 255,
-            {
-                message: "El fileName no puede exceder 255 caracteres.",
-            }
-        ),
-    fileFormat: z
-        .union([z.string(), z.null()])
-        .optional()
-        .transform((value) => {
-            if (value === undefined || value === null) {
-                return value;
-            }
-
-            const normalizedValue = value.trim().toLowerCase();
-            return normalizedValue.length > 0 ? normalizedValue : null;
-        })
-        .refine(
-            (value) => value === undefined || value === null || value.length <= 20,
-            {
-                message: "El fileFormat no puede exceder 20 caracteres.",
-            }
-        ),
     notes: z
         .union([z.string(), z.null()])
         .optional()

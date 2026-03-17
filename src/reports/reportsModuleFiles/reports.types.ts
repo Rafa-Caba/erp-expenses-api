@@ -1,5 +1,3 @@
-// src/reports/types/reports.types.ts
-
 import type { ParamsDictionary } from "express-serve-static-core";
 import type { Types } from "mongoose";
 
@@ -36,24 +34,6 @@ export const REPORT_GROUP_BY_VALUES = [
 
 export type ReportGroupBy = (typeof REPORT_GROUP_BY_VALUES)[number];
 
-export const REPORT_FILE_RESOURCE_TYPE_VALUES = [
-    "image",
-    "video",
-    "raw",
-    "auto",
-] as const;
-
-export type ReportFileResourceType =
-    (typeof REPORT_FILE_RESOURCE_TYPE_VALUES)[number];
-
-export interface ReportStoredFileMetadata {
-    fileUrl?: string | null;
-    filePublicId?: string | null;
-    fileResourceType?: ReportFileResourceType | null;
-    fileName?: string | null;
-    fileFormat?: string | null;
-}
-
 export interface ReportFilters {
     dateFrom?: string | null;
     dateTo?: string | null;
@@ -66,13 +46,14 @@ export interface ReportFilters {
     groupBy?: ReportGroupBy | null;
 }
 
-export interface ReportDocument extends ReportStoredFileMetadata {
+export interface ReportDocument {
     _id: Types.ObjectId;
     workspaceId: Types.ObjectId;
     name: string;
     type: ReportType;
     filters?: ReportFilters | null;
     generatedByMemberId?: Types.ObjectId | null;
+    fileUrl?: string | null;
     notes?: string | null;
     status: ReportStatus;
     isVisible?: boolean;
@@ -90,22 +71,24 @@ export interface ReportParams extends ParamsDictionary {
     reportId: string;
 }
 
-export interface CreateReportBody extends ReportStoredFileMetadata {
+export interface CreateReportBody {
     name: string;
     type: ReportType;
     filters?: ReportFilters | null;
     generatedByMemberId?: string | null;
+    fileUrl?: string | null;
     notes?: string | null;
     status?: ReportStatus;
     isVisible?: boolean;
     generatedAt?: string | null;
 }
 
-export interface UpdateReportBody extends ReportStoredFileMetadata {
+export interface UpdateReportBody {
     name?: string;
     type?: ReportType;
     filters?: ReportFilters | null;
     generatedByMemberId?: string | null;
+    fileUrl?: string | null;
     notes?: string | null;
     status?: ReportStatus;
     isVisible?: boolean;

@@ -1,10 +1,7 @@
-// src/reports/models/Report.model.ts
-
 import { Schema, model, type Model } from "mongoose";
 
 import type { ReportDocument } from "../types/reports.types";
 import {
-    REPORT_FILE_RESOURCE_TYPE_VALUES,
     REPORT_GROUP_BY_VALUES,
     REPORT_STATUS_VALUES,
     REPORT_TYPE_VALUES,
@@ -97,30 +94,6 @@ const reportSchema = new Schema<ReportDocument>(
             type: String,
             trim: true,
             maxlength: 1000,
-            default: null,
-        },
-        filePublicId: {
-            type: String,
-            trim: true,
-            maxlength: 500,
-            default: null,
-        },
-        fileResourceType: {
-            type: String,
-            enum: REPORT_FILE_RESOURCE_TYPE_VALUES,
-            trim: true,
-            default: null,
-        },
-        fileName: {
-            type: String,
-            trim: true,
-            maxlength: 255,
-            default: null,
-        },
-        fileFormat: {
-            type: String,
-            trim: true,
-            maxlength: 20,
             default: null,
         },
         notes: {

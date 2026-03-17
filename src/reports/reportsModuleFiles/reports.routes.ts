@@ -1,5 +1,3 @@
-// src/reports/routes/reports.routes.ts
-
 import { Router } from "express";
 
 import {

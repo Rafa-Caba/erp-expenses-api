@@ -1,13 +1,6 @@
-// src/reports/types/reportExports.types.ts
-
 import type { Types } from "mongoose";
 
-import type {
-    ReportAnalyticsQuery,
-    ReportDocument,
-    ReportFileResourceType,
-    ReportType,
-} from "./reports.types";
+import type { ReportAnalyticsQuery, ReportDocument, ReportType } from "./reports.types";
 import type { WorkspaceDocument } from "@/src/workspaces/models/Workspace.model";
 
 export const REPORT_EXPORT_FORMAT_VALUES = ["csv", "xlsx"] as const;
@@ -26,17 +19,7 @@ export interface ExportReportBody {
 export interface ExportReportFileResult {
     format: ReportExportFormat;
     fileName: string;
-    fileUrl: string;
-    filePublicId: string;
-    fileResourceType: ReportFileResourceType;
-    fileFormat: string | null;
-    fileBytes: number;
-}
-
-export interface LocalGeneratedExportFile {
-    absolutePath: string;
-    fileName: string;
-    format: ReportExportFormat;
+    fileUrl: string | null;
 }
 
 export interface ExportReportResponse {

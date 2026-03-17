@@ -1,5 +1,3 @@
-// src/reports/controllers/reports.controller.ts
-
 import type { RequestHandler } from "express";
 import { Types } from "mongoose";
 import type { ParsedQs } from "qs";
@@ -325,18 +323,12 @@ export const getMonthlySummaryAnalyticsController: RequestHandler<
     WorkspaceReportParams
 > = async (req, res, next): Promise<void> => {
     try {
-        if (!req.workspace) {
-            res.status(404).json({
-                code: "WORKSPACE_NOT_FOUND",
-                message: "Workspace no encontrado.",
-            });
-            return;
-        }
-
         const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
+        const analyticsQuery = buildAnalyticsQuery(req.query);
+
         const summary = await getMonthlySummaryReportService(
             workspaceId,
-            buildAnalyticsQuery(req.query)
+            analyticsQuery
         );
 
         res.status(200).json({
@@ -360,18 +352,12 @@ export const getCategoryBreakdownAnalyticsController: RequestHandler<
     WorkspaceReportParams
 > = async (req, res, next): Promise<void> => {
     try {
-        if (!req.workspace) {
-            res.status(404).json({
-                code: "WORKSPACE_NOT_FOUND",
-                message: "Workspace no encontrado.",
-            });
-            return;
-        }
-
         const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
+        const analyticsQuery = buildAnalyticsQuery(req.query);
+
         const breakdown = await getCategoryBreakdownReportService(
             workspaceId,
-            buildAnalyticsQuery(req.query)
+            analyticsQuery
         );
 
         res.status(200).json({
@@ -395,18 +381,12 @@ export const getDebtSummaryAnalyticsController: RequestHandler<
     WorkspaceReportParams
 > = async (req, res, next): Promise<void> => {
     try {
-        if (!req.workspace) {
-            res.status(404).json({
-                code: "WORKSPACE_NOT_FOUND",
-                message: "Workspace no encontrado.",
-            });
-            return;
-        }
-
         const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
+        const analyticsQuery = buildAnalyticsQuery(req.query);
+
         const summary = await getDebtSummaryReportService(
             workspaceId,
-            buildAnalyticsQuery(req.query)
+            analyticsQuery
         );
 
         res.status(200).json({
@@ -430,18 +410,12 @@ export const getBudgetSummaryAnalyticsController: RequestHandler<
     WorkspaceReportParams
 > = async (req, res, next): Promise<void> => {
     try {
-        if (!req.workspace) {
-            res.status(404).json({
-                code: "WORKSPACE_NOT_FOUND",
-                message: "Workspace no encontrado.",
-            });
-            return;
-        }
-
         const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
+        const analyticsQuery = buildAnalyticsQuery(req.query);
+
         const summary = await getBudgetSummaryReportService(
             workspaceId,
-            buildAnalyticsQuery(req.query)
+            analyticsQuery
         );
 
         res.status(200).json({

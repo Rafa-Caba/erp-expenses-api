@@ -1,0 +1,15 @@
+"section","label","value","categoryId","totalAmount","transactionCount","income","expenses","debtPayments","transfers","adjustments","netBalance"
+"totals","income","0",,,,,,,,,
+"totals","expenses","500",,,,,,,,,
+"totals","debtPayments","0",,,,,,,,,
+"totals","transfers","0",,,,,,,,,
+"totals","adjustments","0",,,,,,,,,
+"totals","netBalance","-500",,,,,,,,,
+"counts","income","0",,,,,,,,,
+"counts","expenses","1",,,,,,,,,
+"counts","debtPayments","0",,,,,,,,,
+"counts","transfers","0",,,,,,,,,
+"counts","adjustments","0",,,,,,,,,
+"counts","total","1",,,,,,,,,
+"topExpenseCategories","Alimentoa",,"69b62c771dc8bc60364256cf","500","1",,,,,,
+"series","2026-03-17",,,,"1","0","500","0","0","0","-500"

@@ -2,7 +2,11 @@
 
 import type { Request } from "express";
 import multer, { type StorageEngine } from "multer";
-import { v2 as cloudinary, type UploadApiErrorResponse, type UploadApiResponse } from "cloudinary";
+import {
+    v2 as cloudinary,
+    type UploadApiErrorResponse,
+    type UploadApiResponse,
+} from "cloudinary";
 import { getEnv } from "@/src/config/env";
 
 const env = getEnv();
@@ -13,7 +17,7 @@ cloudinary.config({
     api_secret: env.CLOUDINARY_API_SECRET,
 });
 
-type CloudinaryResourceType = "image" | "video" | "raw" | "auto";
+export type CloudinaryResourceType = "image" | "video" | "raw" | "auto";
 
 type CloudinaryAllowedFormat =
     | "jpg"
@@ -33,6 +37,7 @@ type CloudinaryAllowedFormat =
     | "doc"
     | "docx"
     | "txt"
+    | "csv"
     | "xls"
     | "xlsx"
     | "ppt"
@@ -51,7 +56,27 @@ type CloudinaryUploadInfo = {
     mimetype: string;
 };
 
-type MulterFileCallback = (error?: Error | null, info?: Partial<Express.Multer.File>) => void;
+export type ExportedCloudinaryFileUploadResult = {
+    fileUrl: string;
+    filePublicId: string;
+    fileResourceType: CloudinaryResourceType;
+    fileName: string;
+    fileFormat: string | null;
+    fileBytes: number;
+};
+
+type UploadExportedFileInput = {
+    filePath: string;
+    fileName: string;
+    folder?: string;
+    resourceType?: Extract<CloudinaryResourceType, "raw" | "auto">;
+    allowedFormats?: CloudinaryAllowedFormat[];
+};
+
+type MulterFileCallback = (
+    error?: Error | null,
+    info?: Partial<Express.Multer.File>
+) => void;
 
 type StorageOptions = {
     folder: string;
@@ -128,6 +153,22 @@ function inferMimeType(
     }
 
     return originalMimeType;
+}
+
+function normalizeCloudinaryResourceType(
+    resourceType: string | undefined,
+    fallback: CloudinaryResourceType
+): CloudinaryResourceType {
+    if (
+        resourceType === "image" ||
+        resourceType === "video" ||
+        resourceType === "raw" ||
+        resourceType === "auto"
+    ) {
+        return resourceType;
+    }
+
+    return fallback;
 }
 
 class CustomCloudinaryStorage implements StorageEngine {
@@ -232,6 +273,44 @@ export const uploadReceiptFile = multer({
         allowedFormats: ["jpg", "jpeg", "png", "webp", "pdf"],
     }),
 });
+
+export async function uploadExportedFile({
+    filePath,
+    fileName,
+    folder = "erp-expenses/reports-exports",
+    resourceType = "raw",
+    allowedFormats = ["csv", "xls", "xlsx"],
+}: UploadExportedFileInput): Promise<ExportedCloudinaryFileUploadResult> {
+    if (!isAllowedFormat(fileName, allowedFormats)) {
+        throw new Error(
+            `Formato de archivo no permitido. Permitidos: ${allowedFormats.join(", ")}.`
+        );
+    }
+
+    const cleanName = buildSafeFileName(fileName);
+    const publicId = `${cleanName}_${Date.now()}`;
+
+    const result = await cloudinary.uploader.upload(filePath, {
+        folder,
+        resource_type: resourceType,
+        public_id: publicId,
+        use_filename: false,
+        unique_filename: false,
+        overwrite: true,
+    });
+
+    return {
+        fileUrl: result.secure_url,
+        filePublicId: result.public_id,
+        fileResourceType: normalizeCloudinaryResourceType(
+            result.resource_type,
+            resourceType
+        ),
+        fileName,
+        fileFormat: result.format ?? getFileExtension(fileName),
+        fileBytes: result.bytes,
+    };
+}
 
 export async function deleteFromCloudinary(
     publicId: string,
