@@ -1,40 +1,60 @@
-// src/auth/utils/jwt.ts
-
-import jwt from "jsonwebtoken";
 import crypto from "crypto";
-import type {
-  JwtAccessPayload,
-  JwtRefreshPayload,
-} from "@/src/auth/types/auth.types";
+import jwt from "jsonwebtoken";
 
 const ACCESS_EXPIRES_IN = "7d";
-const REFRESH_EXPIRES_IN = "30d"; // típico; si quieres 7d también lo cambiamos
+const REFRESH_EXPIRES_IN = "30d";
+
+interface JwtAccessPayload {
+  sub: string;
+}
+
+interface JwtRefreshPayload {
+  sub: string;
+  tid: string;
+}
 
 function mustEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env: ${name}`);
-  return v;
+  const value = process.env[name];
+
+  if (!value) {
+    throw new Error(`Missing env: ${name}`);
+  }
+
+  return value;
 }
 
 export function signAccessToken(userId: string): string {
   const secret = mustEnv("JWT_ACCESS_SECRET");
-  const payload: JwtAccessPayload = { sub: userId };
-  return jwt.sign(payload, secret, { expiresIn: ACCESS_EXPIRES_IN });
+  const payload: JwtAccessPayload = {
+    sub: userId,
+  };
+
+  return jwt.sign(payload, secret, {
+    expiresIn: ACCESS_EXPIRES_IN,
+  });
 }
 
 export function signRefreshToken(userId: string, tokenId: string): string {
   const secret = mustEnv("JWT_REFRESH_SECRET");
-  const payload: JwtRefreshPayload = { sub: userId, tid: tokenId };
-  return jwt.sign(payload, secret, { expiresIn: REFRESH_EXPIRES_IN });
+  const payload: JwtRefreshPayload = {
+    sub: userId,
+    tid: tokenId,
+  };
+
+  return jwt.sign(payload, secret, {
+    expiresIn: REFRESH_EXPIRES_IN,
+  });
 }
 
 export function verifyAccessToken(token: string): JwtAccessPayload {
   const secret = mustEnv("JWT_ACCESS_SECRET");
+
   return jwt.verify(token, secret) as JwtAccessPayload;
 }
 
 export function verifyRefreshToken(token: string): JwtRefreshPayload {
   const secret = mustEnv("JWT_REFRESH_SECRET");
+
   return jwt.verify(token, secret) as JwtRefreshPayload;
 }
 
@@ -43,6 +63,5 @@ export function generateTokenId(): string {
 }
 
 export function hashToken(raw: string): string {
-  // sha256 is enough here; store only hash
   return crypto.createHash("sha256").update(raw).digest("hex");
 }

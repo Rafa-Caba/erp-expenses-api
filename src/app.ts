@@ -12,10 +12,9 @@ import authRouter from "./auth/routes/auth.routes";
 import userRouter from "./users/routes/user.routes";
 
 import { workspacesRouter } from "@/src/workspaces/routes/workspaces.routes";
-import { accountsRouter } from "@/src/accounts/routes/accounts.routes";
-import { categoriesRouter } from "@/src/categories/routes/categories.routes";
-import { transactionsRouter } from "@/src/transactions/routes/transactions.routes";
-import { summaryRouter } from "@/src/summary/routes/summary.routes";
+import { accountRouter } from "@/src/accounts/routes/accounts.routes";
+import { categoryRouter } from "@/src/categories/routes/categories.routes";
+import { transactionRouter } from "@/src/transactions/routes/transactions.routes";
 
 export function createApp() {
   const app = express();
@@ -36,10 +35,9 @@ export function createApp() {
   app.use("/api/workspaces", workspacesRouter);
 
   // Workspace-scoped modules
-  // app.use("/api/workspaces/:workspaceId/accounts", accountsRouter);
-  // app.use("/api/workspaces/:workspaceId/categories", categoriesRouter);
-  // app.use("/api/workspaces/:workspaceId/transactions", transactionsRouter);
-  // app.use("/api/workspaces/:workspaceId/summary", summaryRouter);
+  app.use("/api/workspaces/:workspaceId/accounts", accountRouter);
+  app.use("/api/workspaces/:workspaceId/categories", categoryRouter);
+  app.use("/api/workspaces/:workspaceId/transactions", transactionRouter);
 
   app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
 
