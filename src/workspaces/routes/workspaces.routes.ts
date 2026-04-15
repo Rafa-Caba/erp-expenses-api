@@ -33,6 +33,7 @@ import { budgetRouter } from "@/src/budgets/routes/budgets.routes";
 import { savingGoalRouter } from "@/src/savingGoals/routes/savingGoals.routes";
 import { reminderRouter } from "@/src/reminders/routes/reminders.routes";
 import { reportRouter } from "@/src/reports/routes/reports.routes";
+import { reconciliationRouter } from "@/src/reconciliations/routes/reconciliations.routes";
 
 const workspacesRouter = Router();
 
@@ -47,6 +48,7 @@ workspacesRouter.use("/:workspaceId/transactions", transactionRouter);
 workspacesRouter.use("/:workspaceId/receipts", receiptRouter);
 workspacesRouter.use("/:workspaceId/debts", debtRouter);
 workspacesRouter.use("/:workspaceId/payments", paymentRouter);
+workspacesRouter.use("/:workspaceId/reconciliation", reconciliationRouter);
 workspacesRouter.use("/:workspaceId/budgets", budgetRouter);
 workspacesRouter.use("/:workspaceId/saving-goals", savingGoalRouter);
 workspacesRouter.use("/:workspaceId/reminders", reminderRouter);

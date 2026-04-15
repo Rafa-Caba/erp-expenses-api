@@ -45,6 +45,11 @@ export const workspacePermissionValues = [
     "payments.update",
     "payments.delete",
 
+    "reconciliation.read",
+    "reconciliation.create",
+    "reconciliation.update",
+    "reconciliation.delete",
+
     "savingGoals.read",
     "savingGoals.create",
     "savingGoals.update",
