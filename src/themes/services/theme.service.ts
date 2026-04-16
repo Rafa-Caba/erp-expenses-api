@@ -101,18 +101,18 @@ function getDefaultThemeColors(key: ThemeKey): ThemeColors {
     }
 
     return {
-        background: "#020617",
-        surface: "#0F172A",
-        surfaceAlt: "#111827",
-        textPrimary: "#F8FAFC",
-        textSecondary: "#CBD5E1",
+        background: "#000000",
+        surface: "#0A0A0A",
+        surfaceAlt: "#141414",
+        textPrimary: "#F5F5F5",
+        textSecondary: "#A3A3A3",
         primary: "#3B82F6",
-        secondary: "#A855F7",
+        secondary: "#8B5CF6",
         success: "#22C55E",
         warning: "#F59E0B",
         error: "#EF4444",
         info: "#06B6D4",
-        divider: "#1E293B",
+        divider: "#262626",
     };
 }
 
