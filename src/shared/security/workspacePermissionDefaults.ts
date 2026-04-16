@@ -14,6 +14,7 @@ const memberPermissions: WorkspacePermission[] = [
     "workspace.read",
 
     "workspace.settings.read",
+    "themes.read",
 
     "accounts.read",
     "accounts.create",
@@ -47,6 +48,7 @@ const viewerPermissions: WorkspacePermission[] = [
     "workspace.read",
 
     "workspace.settings.read",
+    "themes.read",
 
     "accounts.read",
     "categories.read",

@@ -3,6 +3,7 @@
 import { Schema, model, type Model, type Types } from "mongoose";
 
 import type { CurrencyCode } from "@/src/shared/types/common";
+import type { ThemeKey } from "@/src/themes/types/theme.types";
 import type {
     WorkspaceDateFormat,
     WorkspaceDecimalSeparator,
@@ -20,7 +21,7 @@ export interface WorkspaceSettingsDocument {
     timezone: string;
     dateFormat: WorkspaceDateFormat;
     timeFormat: WorkspaceTimeFormat;
-    theme?: string | null;
+    theme?: ThemeKey | null;
     notificationsEnabled: boolean;
     budgetAlertsEnabled: boolean;
     debtAlertsEnabled: boolean;
@@ -77,9 +78,9 @@ const workspaceSettingsSchema = new Schema<WorkspaceSettingsDocument>(
         },
         theme: {
             type: String,
+            enum: ["dark", "light", "customizable"],
             trim: true,
-            maxlength: 100,
-            default: null,
+            default: "dark",
         },
         notificationsEnabled: {
             type: Boolean,

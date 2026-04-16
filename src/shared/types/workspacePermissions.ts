@@ -8,6 +8,9 @@ export const workspacePermissionValues = [
     "workspace.settings.read",
     "workspace.settings.update",
 
+    "themes.read",
+    "themes.update",
+
     "workspace.members.read",
     "workspace.members.create",
     "workspace.members.update",

@@ -4,6 +4,7 @@ import type { ParamsDictionary } from "express-serve-static-core";
 import type { Types } from "mongoose";
 
 import type { CurrencyCode } from "@/src/shared/types/common";
+import type { ThemeKey } from "@/src/themes/types/theme.types";
 
 export type WorkspaceLanguage = "es-MX" | "en-US";
 
@@ -30,7 +31,7 @@ export interface CreateWorkspaceSettingsBody {
     timezone: string;
     dateFormat: WorkspaceDateFormat;
     timeFormat?: WorkspaceTimeFormat;
-    theme?: string;
+    theme?: ThemeKey;
     notificationsEnabled: boolean;
     budgetAlertsEnabled: boolean;
     debtAlertsEnabled: boolean;
@@ -47,7 +48,7 @@ export interface UpdateWorkspaceSettingsBody {
     timezone?: string;
     dateFormat?: WorkspaceDateFormat;
     timeFormat?: WorkspaceTimeFormat;
-    theme?: string;
+    theme?: ThemeKey;
     notificationsEnabled?: boolean;
     budgetAlertsEnabled?: boolean;
     debtAlertsEnabled?: boolean;
@@ -66,7 +67,7 @@ export interface WorkspaceSettingsResponseDto {
     timezone: string;
     dateFormat: WorkspaceDateFormat;
     timeFormat: WorkspaceTimeFormat;
-    theme: string | null;
+    theme: ThemeKey | null;
     notificationsEnabled: boolean;
     budgetAlertsEnabled: boolean;
     debtAlertsEnabled: boolean;

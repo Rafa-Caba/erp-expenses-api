@@ -2,6 +2,8 @@
 
 import { z } from "zod";
 
+const themeKeySchema = z.enum(["dark", "light", "customizable"]);
+
 export const workspaceSettingsParamsSchema = z.object({
     params: z.object({
         workspaceId: z.string().trim().min(1, "El id del workspace es obligatorio."),
@@ -19,11 +21,7 @@ export const createWorkspaceSettingsSchema = z.object({
             .max(100, "La zona horaria no puede exceder 100 caracteres."),
         dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]),
         timeFormat: z.enum(["12h", "24h"]).optional(),
-        theme: z
-            .string()
-            .trim()
-            .max(100, "El theme no puede exceder 100 caracteres.")
-            .optional(),
+        theme: themeKeySchema.optional(),
         notificationsEnabled: z.boolean(),
         budgetAlertsEnabled: z.boolean(),
         debtAlertsEnabled: z.boolean(),
@@ -55,11 +53,7 @@ export const updateWorkspaceSettingsSchema = z.object({
             .optional(),
         dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
         timeFormat: z.enum(["12h", "24h"]).optional(),
-        theme: z
-            .string()
-            .trim()
-            .max(100, "El theme no puede exceder 100 caracteres.")
-            .optional(),
+        theme: themeKeySchema.optional(),
         notificationsEnabled: z.boolean().optional(),
         budgetAlertsEnabled: z.boolean().optional(),
         debtAlertsEnabled: z.boolean().optional(),

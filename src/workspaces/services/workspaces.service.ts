@@ -1,8 +1,9 @@
-// src/workspaces/services/workspace.service.ts
+// src/workspaces/services/workspaces.service.ts
 
 import { Types } from "mongoose";
 
 import { createDefaultWorkspaceSettingsService } from "@/src/workspaceSettings/services/workspaceSettings.service";
+import { ensureDefaultThemesForWorkspaceService } from "@/src/themes/services/theme.service";
 
 import { WorkspaceModel, type WorkspaceDocument } from "../models/Workspace.model";
 import { WorkspaceMemberModel } from "../models/WorkspaceMember.model";
@@ -90,6 +91,8 @@ export async function createWorkspaceService(
         currency: body.currency,
         timezone: body.timezone.trim(),
     });
+
+    await ensureDefaultThemesForWorkspaceService(workspace._id);
 
     return mapWorkspaceToDto(workspace);
 }

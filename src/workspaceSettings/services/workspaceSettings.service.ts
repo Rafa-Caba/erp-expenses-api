@@ -2,6 +2,8 @@
 
 import { Types } from "mongoose";
 
+import type { ThemeKey } from "@/src/themes/types/theme.types";
+
 import {
     WorkspaceSettingsModel,
     type WorkspaceSettingsDocument,
@@ -28,13 +30,12 @@ type CreateDefaultWorkspaceSettingsInput = {
     timezone?: string;
 };
 
-function normalizeOptionalTheme(value?: string): string | null | undefined {
+function normalizeOptionalTheme(value?: ThemeKey): ThemeKey | undefined {
     if (value === undefined) {
         return undefined;
     }
 
-    const trimmedValue = value.trim();
-    return trimmedValue.length > 0 ? trimmedValue : null;
+    return value;
 }
 
 function mapWorkspaceSettingsToDto(
@@ -102,7 +103,7 @@ export async function createDefaultWorkspaceSettingsService(
         timezone: input.timezone?.trim() || "America/Mexico_City",
         dateFormat: "DD/MM/YYYY",
         timeFormat: "24h",
-        theme: null,
+        theme: "dark",
         notificationsEnabled: true,
         budgetAlertsEnabled: true,
         debtAlertsEnabled: true,
@@ -148,7 +149,7 @@ export async function updateWorkspaceSettingsService(
     }
 
     if (input.body.theme !== undefined) {
-        settings.theme = normalizeOptionalTheme(input.body.theme) ?? null;
+        settings.theme = normalizeOptionalTheme(input.body.theme) ?? "dark";
     }
 
     if (input.body.notificationsEnabled !== undefined) {
