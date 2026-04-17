@@ -19,6 +19,20 @@ export const workspaceMemberByIdParamsSchema = z.object({
 
 const workspacePermissionSchema = z.enum(workspacePermissionValues);
 
+const joinedAtSchema = z
+    .string()
+    .trim()
+    .refine((value) => {
+        if (value.length === 0) {
+            return false;
+        }
+
+        const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+        const isIsoDateTime = z.string().datetime().safeParse(value).success;
+
+        return isDateOnly || isIsoDateTime;
+    }, "La fecha debe usar formato YYYY-MM-DD o datetime ISO válido.");
+
 export const createWorkspaceMemberSchema = z.object({
     body: z.object({
         userId: z.string().trim().min(1, "El userId es obligatorio."),
@@ -30,7 +44,7 @@ export const createWorkspaceMemberSchema = z.object({
         role: z.enum(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
         permissions: z.array(workspacePermissionSchema).optional(),
         status: z.enum(["active", "invited", "disabled"]).optional(),
-        joinedAt: z.string().datetime().optional(),
+        joinedAt: joinedAtSchema.optional(),
         notes: z
             .string()
             .trim()
@@ -62,6 +76,6 @@ export const updateWorkspaceMemberSchema = z.object({
 export const updateWorkspaceMemberStatusSchema = z.object({
     body: z.object({
         status: z.enum(["active", "invited", "disabled"]),
-        joinedAt: z.string().datetime().optional(),
+        joinedAt: joinedAtSchema.optional(),
     }),
 });
