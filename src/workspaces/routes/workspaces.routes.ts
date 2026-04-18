@@ -34,6 +34,8 @@ import { savingGoalRouter } from "@/src/savingGoals/routes/savingGoals.routes";
 import { reminderRouter } from "@/src/reminders/routes/reminders.routes";
 import { reportRouter } from "@/src/reports/routes/reports.routes";
 import { reconciliationRouter } from "@/src/reconciliations/routes/reconciliations.routes";
+import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
+import { requireWorkspacePermission } from "@/src/middlewares/requireWorkspacePermission";
 
 const workspacesRouter = Router();
 
@@ -59,6 +61,8 @@ workspacesRouter.get("/", getWorkspacesController);
 workspacesRouter.get<WorkspaceParams>(
     "/:workspaceId",
     validateRequest(workspaceParamsSchema),
+    requireWorkspaceAccess(),
+    requireWorkspacePermission("workspace.read"),
     getWorkspaceByIdController
 );
 
@@ -71,6 +75,8 @@ workspacesRouter.post(
 workspacesRouter.patch<WorkspaceParams, object, UpdateWorkspaceBody>(
     "/:workspaceId",
     validateRequest(workspaceParamsSchema),
+    requireWorkspaceAccess(),
+    requireWorkspacePermission("workspace.update"),
     validateRequest(updateWorkspaceSchema),
     updateWorkspaceController
 );
@@ -78,6 +84,8 @@ workspacesRouter.patch<WorkspaceParams, object, UpdateWorkspaceBody>(
 workspacesRouter.delete<WorkspaceParams>(
     "/:workspaceId",
     validateRequest(workspaceParamsSchema),
+    requireWorkspaceAccess(),
+    requireWorkspacePermission("workspace.archive"),
     archiveWorkspaceController
 );
 

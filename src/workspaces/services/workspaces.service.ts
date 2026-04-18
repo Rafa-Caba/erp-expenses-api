@@ -2,6 +2,7 @@
 
 import { Types } from "mongoose";
 
+import type { WorkspacePermission } from "@/src/shared/types/workspacePermissions";
 import { createDefaultWorkspaceSettingsService } from "@/src/workspaceSettings/services/workspaceSettings.service";
 import { ensureDefaultThemesForWorkspaceService } from "@/src/themes/services/theme.service";
 
@@ -62,6 +63,106 @@ async function createOwnerMembership(
     });
 }
 
+function dedupeObjectIds(ids: Types.ObjectId[]): Types.ObjectId[] {
+    const seen = new Set<string>();
+    const result: Types.ObjectId[] = [];
+
+    for (const id of ids) {
+        const key = id.toString();
+
+        if (seen.has(key)) {
+            continue;
+        }
+
+        seen.add(key);
+        result.push(id);
+    }
+
+    return result;
+}
+
+async function getWorkspaceIdsForUserPermission(
+    userId: Types.ObjectId,
+    permission: WorkspacePermission
+): Promise<Types.ObjectId[]> {
+    const memberships = await WorkspaceMemberModel.find({
+        userId,
+        permissions: permission,
+    }).select("workspaceId");
+
+    const workspaceIds = memberships.flatMap((membership) => {
+        if (!membership.workspaceId) {
+            return [];
+        }
+
+        return [membership.workspaceId];
+    });
+
+    return dedupeObjectIds(workspaceIds);
+}
+
+async function getWorkspaceMemberCountMap(
+    workspaceIds: Types.ObjectId[]
+): Promise<Map<string, number>> {
+    if (workspaceIds.length === 0) {
+        return new Map<string, number>();
+    }
+
+    const memberCountsRaw = await WorkspaceMemberModel.aggregate<{
+        _id: Types.ObjectId;
+        count: number;
+    }>([
+        {
+            $match: {
+                workspaceId: { $in: workspaceIds },
+            },
+        },
+        {
+            $group: {
+                _id: "$workspaceId",
+                count: { $sum: 1 },
+            },
+        },
+    ]);
+
+    return new Map<string, number>(
+        memberCountsRaw.map((item) => [item._id.toString(), item.count])
+    );
+}
+
+async function findWorkspaceForOwnerOrPermission(
+    workspaceId: Types.ObjectId,
+    userId: Types.ObjectId,
+    permission: WorkspacePermission
+): Promise<WorkspaceDocument | null> {
+    const ownedWorkspace = await WorkspaceModel.findOne({
+        _id: workspaceId,
+        ownerUserId: userId,
+    });
+
+    if (ownedWorkspace) {
+        return ownedWorkspace;
+    }
+
+    const membership = await WorkspaceMemberModel.findOne({
+        workspaceId,
+        userId,
+        permissions: permission,
+    }).select("_id");
+
+    if (!membership) {
+        return null;
+    }
+
+    const workspace = await WorkspaceModel.findById(workspaceId);
+
+    if (!workspace) {
+        return null;
+    }
+
+    return workspace;
+}
+
 export async function createWorkspaceService(
     input: CreateWorkspaceServiceInput
 ): Promise<WorkspaceResponseDto> {
@@ -100,41 +201,63 @@ export async function createWorkspaceService(
 export async function getWorkspacesService(
     options: WorkspaceQueryOptions
 ): Promise<WorkspaceListItemDto[]> {
-    const query: Record<string, boolean | Types.ObjectId> = {
+    const ownerQuery: {
+        ownerUserId: Types.ObjectId;
+        isArchived?: boolean;
+        isActive?: boolean;
+    } = {
         ownerUserId: options.ownerUserId,
     };
 
     if (!options.includeArchived) {
-        query.isArchived = false;
+        ownerQuery.isArchived = false;
     }
 
     if (!options.includeInactive) {
-        query.isActive = true;
+        ownerQuery.isActive = true;
     }
 
-    const workspaces = await WorkspaceModel.find(query).sort({ createdAt: -1 });
-
-    const workspaceIds = workspaces.map((workspace) => workspace._id);
-
-    const memberCountsRaw = await WorkspaceMemberModel.aggregate<{
-        _id: Types.ObjectId;
-        count: number;
-    }>([
-        {
-            $match: {
-                workspaceId: { $in: workspaceIds },
-            },
-        },
-        {
-            $group: {
-                _id: "$workspaceId",
-                count: { $sum: 1 },
-            },
-        },
+    const [ownedWorkspaces, readableWorkspaceIds] = await Promise.all([
+        WorkspaceModel.find(ownerQuery),
+        getWorkspaceIdsForUserPermission(options.ownerUserId, "workspace.read"),
     ]);
 
-    const memberCountMap = new Map<string, number>(
-        memberCountsRaw.map((item) => [item._id.toString(), item.count])
+    const ownedWorkspaceIdSet = new Set<string>(
+        ownedWorkspaces.map((workspace) => workspace._id.toString())
+    );
+
+    const memberWorkspaceIds = readableWorkspaceIds.filter(
+        (workspaceId) => !ownedWorkspaceIdSet.has(workspaceId.toString())
+    );
+
+    const memberWorkspaceQuery: {
+        _id: { $in: Types.ObjectId[] };
+        isArchived?: boolean;
+        isActive?: boolean;
+    } = {
+        _id: { $in: memberWorkspaceIds },
+    };
+
+    if (!options.includeArchived) {
+        memberWorkspaceQuery.isArchived = false;
+    }
+
+    if (!options.includeInactive) {
+        memberWorkspaceQuery.isActive = true;
+    }
+
+    const memberWorkspaces =
+        memberWorkspaceIds.length > 0
+            ? await WorkspaceModel.find(memberWorkspaceQuery)
+            : [];
+
+    const workspaces = [...ownedWorkspaces, ...memberWorkspaces].sort(
+        (leftWorkspace, rightWorkspace) =>
+            rightWorkspace.createdAt.getTime() - leftWorkspace.createdAt.getTime()
+    );
+
+    const memberCountMap = await getWorkspaceMemberCountMap(
+        workspaces.map((workspace) => workspace._id)
     );
 
     return workspaces.map((workspace) => ({
@@ -147,10 +270,11 @@ export async function getWorkspaceByIdService(
     workspaceId: Types.ObjectId,
     ownerUserId: Types.ObjectId
 ): Promise<WorkspaceResponseDto | null> {
-    const workspace = await WorkspaceModel.findOne({
-        _id: workspaceId,
+    const workspace = await findWorkspaceForOwnerOrPermission(
+        workspaceId,
         ownerUserId,
-    });
+        "workspace.read"
+    );
 
     if (!workspace) {
         return null;
@@ -163,6 +287,16 @@ export async function updateWorkspaceService(
     input: UpdateWorkspaceServiceInput
 ): Promise<WorkspaceResponseDto | null> {
     const { workspaceId, ownerUserId, body } = input;
+
+    const accessibleWorkspace = await findWorkspaceForOwnerOrPermission(
+        workspaceId,
+        ownerUserId,
+        "workspace.update"
+    );
+
+    if (!accessibleWorkspace) {
+        return null;
+    }
 
     const updatePayload: Partial<WorkspaceDocument> = {};
 
@@ -218,11 +352,8 @@ export async function updateWorkspaceService(
         updatePayload.isVisible = body.isVisible;
     }
 
-    const workspace = await WorkspaceModel.findOneAndUpdate(
-        {
-            _id: workspaceId,
-            ownerUserId,
-        },
+    const workspace = await WorkspaceModel.findByIdAndUpdate(
+        accessibleWorkspace._id,
         updatePayload,
         {
             new: true,
@@ -241,11 +372,18 @@ export async function archiveWorkspaceService(
     workspaceId: Types.ObjectId,
     ownerUserId: Types.ObjectId
 ): Promise<WorkspaceResponseDto | null> {
-    const workspace = await WorkspaceModel.findOneAndUpdate(
-        {
-            _id: workspaceId,
-            ownerUserId,
-        },
+    const accessibleWorkspace = await findWorkspaceForOwnerOrPermission(
+        workspaceId,
+        ownerUserId,
+        "workspace.archive"
+    );
+
+    if (!accessibleWorkspace) {
+        return null;
+    }
+
+    const workspace = await WorkspaceModel.findByIdAndUpdate(
+        accessibleWorkspace._id,
         {
             isArchived: true,
             isActive: false,
