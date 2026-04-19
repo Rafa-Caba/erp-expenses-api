@@ -1,71 +1,65 @@
 // src/middlewares/requireWorkspacePermission.ts
 
-import type { NextFunction, Request, Response } from "express";
+import type { RequestHandler } from "express";
 
-import {
-    hasAnyWorkspacePermission,
-    hasWorkspacePermission,
-} from "@/src/shared/security/workspacePermissions";
+import type { MemberRole } from "@/src/shared/types/common";
 import type { WorkspacePermission } from "@/src/shared/types/workspacePermissions";
 
-export function requireWorkspacePermission(permission: WorkspacePermission) {
-    return (req: Request, res: Response, next: NextFunction): void => {
-        const workspace = req.workspace;
-        const workspaceMember = req.workspaceMember;
+type WorkspaceMemberWithPermissions = {
+    _id: string;
+    role: MemberRole;
+    permissions: WorkspacePermission[];
+    status: "active" | "invited" | "disabled";
+};
 
-        if (!workspace || !workspaceMember) {
-            res.status(403).json({
-                code: "WORKSPACE_ACCESS_MISSING",
-                message: "Forbidden",
-            });
-            return;
-        }
+function hasWorkspacePermission(
+    workspaceMember: WorkspaceMemberWithPermissions,
+    requiredPermission: WorkspacePermission
+): boolean {
+    if (workspaceMember.role === "OWNER") {
+        return true;
+    }
 
-        const isAllowed = hasWorkspacePermission({
-            workspaceKind: workspace.kind,
-            role: workspaceMember.role,
-            grantedPermissions: workspaceMember.permissions ?? [],
-            requiredPermission: permission,
-        });
-
-        if (!isAllowed) {
-            res.status(403).json({
-                code: "WORKSPACE_PERMISSION_FORBIDDEN",
-                message: "Forbidden",
-            });
-            return;
-        }
-
-        next();
-    };
+    return workspaceMember.permissions.includes(requiredPermission);
 }
 
-export function requireAnyWorkspacePermission(
-    ...permissions: WorkspacePermission[]
-) {
-    return (req: Request, res: Response, next: NextFunction): void => {
-        const workspace = req.workspace;
-        const workspaceMember = req.workspaceMember;
+export function requireWorkspacePermission(
+    requiredPermission: WorkspacePermission
+): RequestHandler {
+    return (req, res, next) => {
+        const workspaceMember = req.workspaceMember as
+            | WorkspaceMemberWithPermissions
+            | undefined;
 
-        if (!workspace || !workspaceMember) {
-            res.status(403).json({
-                code: "WORKSPACE_ACCESS_MISSING",
-                message: "Forbidden",
+        if (!req.workspace) {
+            res.status(404).json({
+                code: "WORKSPACE_NOT_FOUND",
+                message: "Workspace no encontrado.",
             });
             return;
         }
 
-        const isAllowed = hasAnyWorkspacePermission({
-            workspaceKind: workspace.kind,
-            role: workspaceMember.role,
-            grantedPermissions: workspaceMember.permissions ?? [],
-            requiredPermissions: permissions,
-        });
-
-        if (!isAllowed) {
+        if (!workspaceMember) {
             res.status(403).json({
-                code: "WORKSPACE_PERMISSION_FORBIDDEN",
-                message: "Forbidden",
+                code: "WORKSPACE_MEMBER_NOT_FOUND",
+                message: "No se pudo resolver el miembro del workspace.",
+            });
+            return;
+        }
+
+        if (workspaceMember.status !== "active") {
+            res.status(403).json({
+                code: "WORKSPACE_MEMBER_INACTIVE",
+                message: "Tu membresía del workspace no está activa.",
+            });
+            return;
+        }
+
+        if (!hasWorkspacePermission(workspaceMember, requiredPermission)) {
+            res.status(403).json({
+                code: "WORKSPACE_PERMISSION_DENIED",
+                message: "No tienes permisos para realizar esta acción en el workspace.",
+                requiredPermission,
             });
             return;
         }

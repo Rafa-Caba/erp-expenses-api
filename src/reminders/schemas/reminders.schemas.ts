@@ -1,10 +1,12 @@
+// src/reminders/schemas/reminders.schemas.ts
+
 import { z } from "zod";
 
 import {
     REMINDER_CHANNEL_VALUES,
+    REMINDER_MEMBER_RESPONSE_STATUS_VALUES,
     REMINDER_PRIORITY_VALUES,
     REMINDER_RELATED_ENTITY_TYPE_VALUES,
-    REMINDER_STATUS_VALUES,
     REMINDER_TYPE_VALUES,
 } from "../types/reminders.types";
 
@@ -41,7 +43,7 @@ const nullableTrimmedStringSchema = z
 
 const createReminderBodySchema = z
     .object({
-        memberId: nullableTrimmedStringSchema,
+        targetMemberId: nullableTrimmedStringSchema,
         title: z
             .string()
             .trim()
@@ -94,11 +96,6 @@ const createReminderBodySchema = z
                     message: "La regla de recurrencia no puede exceder 255 caracteres.",
                 }
             ),
-        status: z
-            .enum(REMINDER_STATUS_VALUES, {
-                message: "El estatus del recordatorio no es válido.",
-            })
-            .optional(),
         priority: z
             .enum(REMINDER_PRIORITY_VALUES, {
                 message: "La prioridad no es válida.",
@@ -145,7 +142,7 @@ const createReminderBodySchema = z
 
 const updateReminderBodySchema = z
     .object({
-        memberId: nullableTrimmedStringSchema,
+        targetMemberId: nullableTrimmedStringSchema,
         title: z
             .string()
             .trim()
@@ -205,11 +202,6 @@ const updateReminderBodySchema = z
                     message: "La regla de recurrencia no puede exceder 255 caracteres.",
                 }
             ),
-        status: z
-            .enum(REMINDER_STATUS_VALUES, {
-                message: "El estatus del recordatorio no es válido.",
-            })
-            .optional(),
         priority: z
             .enum(REMINDER_PRIORITY_VALUES, {
                 message: "La prioridad no es válida.",
@@ -222,7 +214,52 @@ const updateReminderBodySchema = z
             })
             .optional(),
         isVisible: formBooleanSchema.optional(),
+    })
+    .superRefine((body, ctx) => {
+        const hasRelatedEntityType =
+            body.relatedEntityType !== undefined &&
+            body.relatedEntityType !== null;
+        const hasRelatedEntityId =
+            typeof body.relatedEntityId === "string" &&
+            body.relatedEntityId.trim().length > 0;
+
+        if (hasRelatedEntityType !== hasRelatedEntityId) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["relatedEntityType"],
+                message: "relatedEntityType y relatedEntityId deben enviarse juntos.",
+            });
+
+            ctx.addIssue({
+                code: "custom",
+                path: ["relatedEntityId"],
+                message: "relatedEntityId y relatedEntityType deben enviarse juntos.",
+            });
+        }
+
+        if (
+            body.isRecurring === true &&
+            (!body.recurrenceRule || body.recurrenceRule.length === 0)
+        ) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["recurrenceRule"],
+                message: "La regla de recurrencia es obligatoria cuando el recordatorio es recurrente.",
+            });
+        }
     });
+
+const respondToReminderBodySchema = z.object({
+    status: z.enum(
+        REMINDER_MEMBER_RESPONSE_STATUS_VALUES.filter(
+            (value) => value !== "pending"
+        ) as ["done", "dismissed"],
+        {
+            message: "La respuesta del recordatorio no es válida.",
+        }
+    ),
+});
+
 export const workspaceReminderParamsSchema = z.object({
     params: z.object({
         workspaceId: z.string().trim().min(1, "El id del workspace es obligatorio."),
@@ -242,4 +279,8 @@ export const createReminderSchema = z.object({
 
 export const updateReminderSchema = z.object({
     body: updateReminderBodySchema,
+});
+
+export const respondToReminderSchema = z.object({
+    body: respondToReminderBodySchema,
 });

@@ -1,5 +1,3 @@
-// src/workspaces/types/workspace.types.ts
-
 import type { ParamsDictionary } from "express-serve-static-core";
 import type { Types } from "mongoose";
 
@@ -8,7 +6,13 @@ import type {
     WorkspaceKind,
     WorkspaceType,
     WorkspaceVisibility,
+    MemberRole,
+    MemberStatus,
 } from "@/src/shared/types/common";
+
+export interface WorkspaceParams extends ParamsDictionary {
+    workspaceId: string;
+}
 
 export interface CreateWorkspaceBody {
     type: WorkspaceType;
@@ -40,8 +44,10 @@ export interface UpdateWorkspaceBody {
     isVisible?: boolean;
 }
 
-export interface WorkspaceParams extends ParamsDictionary {
-    workspaceId: string;
+export interface WorkspaceCurrentMembershipDto {
+    memberId: string;
+    role: MemberRole;
+    status: MemberStatus;
 }
 
 export interface WorkspaceResponseDto {
@@ -62,10 +68,17 @@ export interface WorkspaceResponseDto {
     isVisible: boolean;
     createdAt: Date;
     updatedAt: Date;
+    currentMembership: WorkspaceCurrentMembershipDto | null;
 }
 
 export interface WorkspaceListItemDto extends WorkspaceResponseDto {
-    memberCount?: number;
+    memberCount: number;
+}
+
+export interface WorkspaceQueryOptions {
+    ownerUserId: Types.ObjectId;
+    includeArchived?: boolean;
+    includeInactive?: boolean;
 }
 
 export interface CreateWorkspaceServiceInput {
@@ -77,10 +90,4 @@ export interface UpdateWorkspaceServiceInput {
     workspaceId: Types.ObjectId;
     ownerUserId: Types.ObjectId;
     body: UpdateWorkspaceBody;
-}
-
-export interface WorkspaceQueryOptions {
-    ownerUserId: Types.ObjectId;
-    includeArchived?: boolean;
-    includeInactive?: boolean;
 }

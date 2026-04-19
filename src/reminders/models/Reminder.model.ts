@@ -1,13 +1,46 @@
 import { Schema, model, type Model } from "mongoose";
 
-import type { ReminderDocument } from "../types/reminders.types";
+import type {
+    ReminderDocument,
+    ReminderMemberResponse,
+} from "../types/reminders.types";
 import {
     REMINDER_CHANNEL_VALUES,
+    REMINDER_MEMBER_RESPONSE_STATUS_VALUES,
     REMINDER_PRIORITY_VALUES,
     REMINDER_RELATED_ENTITY_TYPE_VALUES,
     REMINDER_STATUS_VALUES,
     REMINDER_TYPE_VALUES,
 } from "../types/reminders.types";
+
+const reminderMemberResponseSchema = new Schema<ReminderMemberResponse>(
+    {
+        memberId: {
+            type: Schema.Types.ObjectId,
+            ref: "WorkspaceMember",
+            required: true,
+        },
+        status: {
+            type: String,
+            enum: REMINDER_MEMBER_RESPONSE_STATUS_VALUES,
+            required: true,
+            default: "pending",
+            trim: true,
+        },
+        viewedAt: {
+            type: Date,
+            default: null,
+        },
+        respondedAt: {
+            type: Date,
+            default: null,
+        },
+    },
+    {
+        _id: false,
+        versionKey: false,
+    }
+);
 
 const reminderSchema = new Schema<ReminderDocument>(
     {
@@ -16,10 +49,22 @@ const reminderSchema = new Schema<ReminderDocument>(
             ref: "Workspace",
             required: true,
         },
-        memberId: {
+        createdByMemberId: {
             type: Schema.Types.ObjectId,
             ref: "WorkspaceMember",
-            default: null,
+            required: true,
+            index: true,
+        },
+        recipientMemberIds: {
+            type: [
+                {
+                    type: Schema.Types.ObjectId,
+                    ref: "WorkspaceMember",
+                    required: true,
+                },
+            ],
+            required: true,
+            default: [],
         },
         title: {
             type: String,
@@ -46,7 +91,8 @@ const reminderSchema = new Schema<ReminderDocument>(
             trim: true,
         },
         relatedEntityId: {
-            type: Schema.Types.ObjectId,
+            type: String,
+            trim: true,
             default: null,
         },
         dueDate: {
@@ -70,6 +116,11 @@ const reminderSchema = new Schema<ReminderDocument>(
             required: true,
             default: "pending",
             trim: true,
+        },
+        responses: {
+            type: [reminderMemberResponseSchema],
+            required: true,
+            default: [],
         },
         priority: {
             type: String,
@@ -96,7 +147,14 @@ const reminderSchema = new Schema<ReminderDocument>(
 );
 
 reminderSchema.index({ workspaceId: 1, dueDate: 1, status: 1 });
-reminderSchema.index({ workspaceId: 1, memberId: 1, dueDate: 1 });
+reminderSchema.index({ workspaceId: 1, createdByMemberId: 1, dueDate: 1 });
+reminderSchema.index({ workspaceId: 1, recipientMemberIds: 1, dueDate: 1 });
+reminderSchema.index({ workspaceId: 1, "responses.memberId": 1, dueDate: 1 });
+reminderSchema.index({
+    workspaceId: 1,
+    "responses.memberId": 1,
+    "responses.status": 1,
+});
 reminderSchema.index({ workspaceId: 1, type: 1, status: 1, dueDate: 1 });
 reminderSchema.index({ workspaceId: 1, relatedEntityType: 1, relatedEntityId: 1 });
 reminderSchema.index({ workspaceId: 1, isRecurring: 1, status: 1 });

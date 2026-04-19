@@ -1,7 +1,10 @@
+// src/reminders/types/reminders.types.ts
+
 import type { ParamsDictionary } from "express-serve-static-core";
 import type { Types } from "mongoose";
 
 import type { WorkspaceDocument } from "@/src/workspaces/models/Workspace.model";
+import { MemberRole } from "@/src/shared/types/common";
 
 export const REMINDER_TYPE_VALUES = [
     "bill",
@@ -14,11 +17,20 @@ export type ReminderType = (typeof REMINDER_TYPE_VALUES)[number];
 
 export const REMINDER_STATUS_VALUES = [
     "pending",
+    "in_progress",
+    "resolved",
+] as const;
+
+export type ReminderStatus = (typeof REMINDER_STATUS_VALUES)[number];
+
+export const REMINDER_MEMBER_RESPONSE_STATUS_VALUES = [
+    "pending",
     "done",
     "dismissed",
 ] as const;
 
-export type ReminderStatus = (typeof REMINDER_STATUS_VALUES)[number];
+export type ReminderMemberResponseStatus =
+    (typeof REMINDER_MEMBER_RESPONSE_STATUS_VALUES)[number];
 
 export const REMINDER_PRIORITY_VALUES = [
     "low",
@@ -51,19 +63,28 @@ export const REMINDER_RELATED_ENTITY_TYPE_VALUES = [
 export type ReminderRelatedEntityType =
     (typeof REMINDER_RELATED_ENTITY_TYPE_VALUES)[number];
 
+export interface ReminderMemberResponse {
+    memberId: Types.ObjectId;
+    status: ReminderMemberResponseStatus;
+    viewedAt: Date | null;
+    respondedAt: Date | null;
+}
+
 export interface ReminderDocument {
     _id: Types.ObjectId;
     workspaceId: Types.ObjectId;
-    memberId?: Types.ObjectId | null;
+    createdByMemberId: Types.ObjectId;
+    recipientMemberIds: Types.ObjectId[];
     title: string;
     description?: string | null;
     type: ReminderType;
     relatedEntityType?: ReminderRelatedEntityType | null;
-    relatedEntityId?: Types.ObjectId | null;
+    relatedEntityId?: string | null;
     dueDate: Date;
     isRecurring: boolean;
     recurrenceRule?: string | null;
     status: ReminderStatus;
+    responses: ReminderMemberResponse[];
     priority?: ReminderPriority | null;
     channel: ReminderChannel;
     isVisible?: boolean;
@@ -81,7 +102,7 @@ export interface ReminderParams extends ParamsDictionary {
 }
 
 export interface CreateReminderBody {
-    memberId?: string | null;
+    targetMemberId?: string | null;
     title: string;
     description?: string | null;
     type: ReminderType;
@@ -90,14 +111,13 @@ export interface CreateReminderBody {
     dueDate: string;
     isRecurring: boolean;
     recurrenceRule?: string | null;
-    status?: ReminderStatus;
     priority?: ReminderPriority | null;
     channel?: ReminderChannel;
     isVisible?: boolean;
 }
 
 export interface UpdateReminderBody {
-    memberId?: string | null;
+    targetMemberId?: string | null;
     title?: string;
     description?: string | null;
     type?: ReminderType;
@@ -106,16 +126,25 @@ export interface UpdateReminderBody {
     dueDate?: string;
     isRecurring?: boolean;
     recurrenceRule?: string | null;
-    status?: ReminderStatus;
     priority?: ReminderPriority | null;
     channel?: ReminderChannel;
     isVisible?: boolean;
+}
+
+export interface RespondToReminderBody {
+    status: Exclude<ReminderMemberResponseStatus, "pending">;
+}
+
+export interface ReminderActorContext {
+    workspaceMemberId: Types.ObjectId;
+    workspaceMemberRole: MemberRole;
 }
 
 export interface CreateReminderServiceInput {
     workspaceId: Types.ObjectId;
     body: CreateReminderBody;
     workspace: WorkspaceDocument;
+    actor: ReminderActorContext;
 }
 
 export interface UpdateReminderServiceInput {
@@ -123,10 +152,12 @@ export interface UpdateReminderServiceInput {
     reminderId: Types.ObjectId;
     body: UpdateReminderBody;
     workspace: WorkspaceDocument;
+    actor: ReminderActorContext;
 }
 
 export interface DeleteReminderServiceInput {
     workspaceId: Types.ObjectId;
     reminderId: Types.ObjectId;
     workspace: WorkspaceDocument;
+    actor: ReminderActorContext;
 }

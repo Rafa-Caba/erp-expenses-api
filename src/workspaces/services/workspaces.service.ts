@@ -1,5 +1,3 @@
-// src/workspaces/services/workspaces.service.ts
-
 import { Types } from "mongoose";
 
 import type { WorkspacePermission } from "@/src/shared/types/workspacePermissions";
@@ -11,6 +9,7 @@ import { WorkspaceMemberModel } from "../models/WorkspaceMember.model";
 import type {
     CreateWorkspaceServiceInput,
     UpdateWorkspaceServiceInput,
+    WorkspaceCurrentMembershipDto,
     WorkspaceListItemDto,
     WorkspaceQueryOptions,
     WorkspaceResponseDto,
@@ -25,7 +24,26 @@ function normalizeOptionalString(value?: string): string | undefined {
     return trimmedValue.length > 0 ? trimmedValue : undefined;
 }
 
-function mapWorkspaceToDto(workspace: WorkspaceDocument): WorkspaceResponseDto {
+function mapCurrentMembershipToDto(membership: {
+    _id: Types.ObjectId;
+    role: WorkspaceCurrentMembershipDto["role"];
+    status: WorkspaceCurrentMembershipDto["status"];
+} | null): WorkspaceCurrentMembershipDto | null {
+    if (!membership) {
+        return null;
+    }
+
+    return {
+        memberId: membership._id.toString(),
+        role: membership.role,
+        status: membership.status,
+    };
+}
+
+function mapWorkspaceToDto(
+    workspace: WorkspaceDocument,
+    currentMembership: WorkspaceCurrentMembershipDto | null = null
+): WorkspaceResponseDto {
     return {
         id: workspace._id.toString(),
         type: workspace.type,
@@ -44,6 +62,7 @@ function mapWorkspaceToDto(workspace: WorkspaceDocument): WorkspaceResponseDto {
         isVisible: workspace.isVisible ?? true,
         createdAt: workspace.createdAt,
         updatedAt: workspace.updatedAt,
+        currentMembership,
     };
 }
 
@@ -57,28 +76,13 @@ async function createOwnerMembership(
         userId: ownerUserId,
         displayName,
         role: "OWNER",
+        permissions: [],
         status: "active",
         joinedAt: new Date(),
+        invitedByUserId: ownerUserId,
+        notes: null,
         isVisible: true,
     });
-}
-
-function dedupeObjectIds(ids: Types.ObjectId[]): Types.ObjectId[] {
-    const seen = new Set<string>();
-    const result: Types.ObjectId[] = [];
-
-    for (const id of ids) {
-        const key = id.toString();
-
-        if (seen.has(key)) {
-            continue;
-        }
-
-        seen.add(key);
-        result.push(id);
-    }
-
-    return result;
 }
 
 async function getWorkspaceIdsForUserPermission(
@@ -87,18 +91,11 @@ async function getWorkspaceIdsForUserPermission(
 ): Promise<Types.ObjectId[]> {
     const memberships = await WorkspaceMemberModel.find({
         userId,
+        status: "active",
         permissions: permission,
     }).select("workspaceId");
 
-    const workspaceIds = memberships.flatMap((membership) => {
-        if (!membership.workspaceId) {
-            return [];
-        }
-
-        return [membership.workspaceId];
-    });
-
-    return dedupeObjectIds(workspaceIds);
+    return memberships.map((membership) => membership.workspaceId);
 }
 
 async function getWorkspaceMemberCountMap(
@@ -108,13 +105,14 @@ async function getWorkspaceMemberCountMap(
         return new Map<string, number>();
     }
 
-    const memberCountsRaw = await WorkspaceMemberModel.aggregate<{
+    const rows = await WorkspaceMemberModel.aggregate<{
         _id: Types.ObjectId;
         count: number;
     }>([
         {
             $match: {
                 workspaceId: { $in: workspaceIds },
+                status: "active",
             },
         },
         {
@@ -126,7 +124,32 @@ async function getWorkspaceMemberCountMap(
     ]);
 
     return new Map<string, number>(
-        memberCountsRaw.map((item) => [item._id.toString(), item.count])
+        rows.map((row) => [row._id.toString(), row.count])
+    );
+}
+
+async function getCurrentMembershipMap(
+    workspaceIds: Types.ObjectId[],
+    userId: Types.ObjectId
+): Promise<Map<string, WorkspaceCurrentMembershipDto>> {
+    if (workspaceIds.length === 0) {
+        return new Map<string, WorkspaceCurrentMembershipDto>();
+    }
+
+    const memberships = await WorkspaceMemberModel.find({
+        workspaceId: { $in: workspaceIds },
+        userId,
+    }).select("_id workspaceId role status");
+
+    return new Map<string, WorkspaceCurrentMembershipDto>(
+        memberships.map((membership) => [
+            membership.workspaceId.toString(),
+            {
+                memberId: membership._id.toString(),
+                role: membership.role,
+                status: membership.status,
+            },
+        ])
     );
 }
 
@@ -195,7 +218,11 @@ export async function createWorkspaceService(
 
     await ensureDefaultThemesForWorkspaceService(workspace._id);
 
-    return mapWorkspaceToDto(workspace);
+    return mapWorkspaceToDto(workspace, {
+        memberId: "",
+        role: "OWNER",
+        status: "active",
+    });
 }
 
 export async function getWorkspacesService(
@@ -256,12 +283,18 @@ export async function getWorkspacesService(
             rightWorkspace.createdAt.getTime() - leftWorkspace.createdAt.getTime()
     );
 
-    const memberCountMap = await getWorkspaceMemberCountMap(
-        workspaces.map((workspace) => workspace._id)
-    );
+    const workspaceIds = workspaces.map((workspace) => workspace._id);
+
+    const [memberCountMap, currentMembershipMap] = await Promise.all([
+        getWorkspaceMemberCountMap(workspaceIds),
+        getCurrentMembershipMap(workspaceIds, options.ownerUserId),
+    ]);
 
     return workspaces.map((workspace) => ({
-        ...mapWorkspaceToDto(workspace),
+        ...mapWorkspaceToDto(
+            workspace,
+            currentMembershipMap.get(workspace._id.toString()) ?? null
+        ),
         memberCount: memberCountMap.get(workspace._id.toString()) ?? 0,
     }));
 }
@@ -280,7 +313,23 @@ export async function getWorkspaceByIdService(
         return null;
     }
 
-    return mapWorkspaceToDto(workspace);
+    const membership = await WorkspaceMemberModel.findOne({
+        workspaceId: workspace._id,
+        userId: ownerUserId,
+    }).select("_id role status");
+
+    return mapWorkspaceToDto(
+        workspace,
+        mapCurrentMembershipToDto(
+            membership
+                ? {
+                    _id: membership._id,
+                    role: membership.role,
+                    status: membership.status,
+                }
+                : null
+        )
+    );
 }
 
 export async function updateWorkspaceService(
@@ -365,7 +414,23 @@ export async function updateWorkspaceService(
         return null;
     }
 
-    return mapWorkspaceToDto(workspace);
+    const membership = await WorkspaceMemberModel.findOne({
+        workspaceId: workspace._id,
+        userId: ownerUserId,
+    }).select("_id role status");
+
+    return mapWorkspaceToDto(
+        workspace,
+        mapCurrentMembershipToDto(
+            membership
+                ? {
+                    _id: membership._id,
+                    role: membership.role,
+                    status: membership.status,
+                }
+                : null
+        )
+    );
 }
 
 export async function archiveWorkspaceService(
@@ -398,5 +463,21 @@ export async function archiveWorkspaceService(
         return null;
     }
 
-    return mapWorkspaceToDto(workspace);
+    const membership = await WorkspaceMemberModel.findOne({
+        workspaceId: workspace._id,
+        userId: ownerUserId,
+    }).select("_id role status");
+
+    return mapWorkspaceToDto(
+        workspace,
+        mapCurrentMembershipToDto(
+            membership
+                ? {
+                    _id: membership._id,
+                    role: membership.role,
+                    status: membership.status,
+                }
+                : null
+        )
+    );
 }

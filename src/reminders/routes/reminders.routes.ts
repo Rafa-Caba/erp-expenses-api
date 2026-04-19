@@ -1,3 +1,5 @@
+// src/reminders/routes/reminders.routes.ts
+
 import { Router } from "express";
 
 import {
@@ -5,17 +7,21 @@ import {
     deleteReminderController,
     getReminderByIdController,
     getRemindersController,
+    markReminderAsViewedController,
+    respondToReminderController,
     updateReminderController,
 } from "../controllers/reminders.controller";
 import {
     createReminderSchema,
     reminderParamsSchema,
+    respondToReminderSchema,
     updateReminderSchema,
     workspaceReminderParamsSchema,
 } from "../schemas/reminders.schemas";
 import type {
     CreateReminderBody,
     ReminderParams,
+    RespondToReminderBody,
     UpdateReminderBody,
     WorkspaceReminderParams,
 } from "../types/reminders.types";
@@ -55,6 +61,21 @@ reminderRouter.patch<ReminderParams, object, UpdateReminderBody>(
     validateRequest(updateReminderSchema),
     requireWorkspacePermission("reminders.update"),
     updateReminderController
+);
+
+reminderRouter.patch<ReminderParams>(
+    "/:reminderId/view",
+    validateRequest(reminderParamsSchema),
+    requireWorkspacePermission("reminders.read"),
+    markReminderAsViewedController
+);
+
+reminderRouter.patch<ReminderParams, object, RespondToReminderBody>(
+    "/:reminderId/respond",
+    validateRequest(reminderParamsSchema),
+    validateRequest(respondToReminderSchema),
+    requireWorkspacePermission("reminders.read"),
+    respondToReminderController
 );
 
 reminderRouter.delete<ReminderParams>(
