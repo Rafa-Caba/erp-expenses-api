@@ -1,13 +1,19 @@
 // src/auth/services/auth.service.ts
-
 import bcrypt from "bcryptjs";
 import jwt, { type JwtPayload } from "jsonwebtoken";
-import { createHash, randomBytes } from "node:crypto";
 import type { StringValue } from "ms";
 
 import { RefreshTokenModel } from "@/src/auth/models/RefreshToken.model";
 import { UserModel } from "@/src/users/models/User.model";
 import { deleteFromCloudinary } from "@/src/middlewares/cloudinaryUploads";
+import {
+    sendEmailVerificationEmail,
+    sendPasswordResetEmail,
+} from "@/src/shared/email/email.service";
+import {
+    createOpaqueTokenWithExpiry,
+    hashOpaqueToken,
+} from "@/src/shared/security/opaqueToken";
 import type {
     AuthAccessTokenPayload,
     AuthRefreshTokenPayload,
@@ -92,6 +98,8 @@ type AuthUserLike = IdLike & {
 };
 
 type EmailVerificationTokenAttachable = {
+    fullName: string;
+    email: string;
     emailVerificationTokenHash?: string | null;
     emailVerificationExpiresAt?: Date | null;
     save: () => Promise<unknown>;
@@ -222,20 +230,8 @@ function getRefreshTokenTtlMs(): number {
     return amount * 24 * 60 * 60 * 1000;
 }
 
-function addMinutes(date: Date, minutes: number): Date {
-    return new Date(date.getTime() + minutes * 60 * 1000);
-}
-
 function addMilliseconds(date: Date, milliseconds: number): Date {
     return new Date(date.getTime() + milliseconds);
-}
-
-function hashOpaqueToken(token: string): string {
-    return createHash("sha256").update(token).digest("hex");
-}
-
-function generateOpaqueToken(): string {
-    return randomBytes(32).toString("hex");
 }
 
 function mapUserToAuthUser(user: AuthUserLike): AuthUserResponse {
@@ -315,7 +311,9 @@ function parseAccessTokenPayload(payload: string | JwtPayload): AuthAccessTokenP
     };
 }
 
-function parseRefreshTokenPayload(payload: string | JwtPayload): AuthRefreshTokenPayload | null {
+function parseRefreshTokenPayload(
+    payload: string | JwtPayload
+): AuthRefreshTokenPayload | null {
     if (typeof payload === "string") {
         return null;
     }
@@ -339,27 +337,11 @@ function parseRefreshTokenPayload(payload: string | JwtPayload): AuthRefreshToke
 }
 
 function createEmailVerificationToken(): TokenCreationResult {
-    const plainToken = generateOpaqueToken();
-    const tokenHash = hashOpaqueToken(plainToken);
-    const expiresAt = addMinutes(new Date(), getEmailVerificationTtlMinutes());
-
-    return {
-        plainToken,
-        tokenHash,
-        expiresAt,
-    };
+    return createOpaqueTokenWithExpiry(getEmailVerificationTtlMinutes());
 }
 
 function createPasswordResetToken(): TokenCreationResult {
-    const plainToken = generateOpaqueToken();
-    const tokenHash = hashOpaqueToken(plainToken);
-    const expiresAt = addMinutes(new Date(), getPasswordResetTtlMinutes());
-
-    return {
-        plainToken,
-        tokenHash,
-        expiresAt,
-    };
+    return createOpaqueTokenWithExpiry(getPasswordResetTtlMinutes());
 }
 
 function buildDebugResponse(input: {
@@ -472,13 +454,20 @@ async function revokeAllRefreshTokensForUser(userId: string): Promise<void> {
     );
 }
 
-async function attachNewEmailVerificationToken(user: EmailVerificationTokenAttachable): Promise<string> {
+async function attachNewEmailVerificationToken(
+    user: EmailVerificationTokenAttachable
+): Promise<string> {
     const verificationToken = createEmailVerificationToken();
 
     user.emailVerificationTokenHash = verificationToken.tokenHash;
     user.emailVerificationExpiresAt = verificationToken.expiresAt;
 
     await user.save();
+    await sendEmailVerificationEmail({
+        to: user.email,
+        recipientName: user.fullName,
+        token: verificationToken.plainToken,
+    });
 
     return verificationToken.plainToken;
 }
@@ -535,6 +524,12 @@ export async function registerAuthService(
         passwordResetTokenHash: null,
         passwordResetExpiresAt: null,
         lastLoginAt: null,
+    });
+
+    await sendEmailVerificationEmail({
+        to: createdUser.email,
+        recipientName: createdUser.fullName,
+        token: verificationToken.plainToken,
     });
 
     const tokens = await issueAuthTokensForUser(
@@ -802,8 +797,7 @@ export async function updateMeAuthService(
                 : user.avatarPublicId ?? null;
 
         const shouldDeletePreviousAvatar =
-            Boolean(user.avatarPublicId) &&
-            user.avatarPublicId !== nextAvatarPublicId;
+            Boolean(user.avatarPublicId) && user.avatarPublicId !== nextAvatarPublicId;
 
         if (shouldDeletePreviousAvatar && user.avatarPublicId) {
             await deleteFromCloudinary(user.avatarPublicId, "image");
@@ -837,7 +831,10 @@ export async function changePasswordAuthService(
         };
     }
 
-    const isCurrentPasswordValid = await bcrypt.compare(input.currentPassword, user.passwordHash);
+    const isCurrentPasswordValid = await bcrypt.compare(
+        input.currentPassword,
+        user.passwordHash
+    );
 
     if (!isCurrentPasswordValid) {
         return {
@@ -887,6 +884,11 @@ export async function forgotPasswordAuthService(
     user.passwordResetExpiresAt = resetToken.expiresAt;
 
     await user.save();
+    await sendPasswordResetEmail({
+        to: user.email,
+        recipientName: user.fullName,
+        token: resetToken.plainToken,
+    });
 
     return {
         ok: true,

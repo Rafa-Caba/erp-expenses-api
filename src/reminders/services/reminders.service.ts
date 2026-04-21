@@ -4,10 +4,13 @@ import { Types } from "mongoose";
 
 import type { MemberRole } from "@/src/shared/types/common";
 import { WorkspaceMemberModel } from "@/src/workspaces/models/WorkspaceMember.model";
+import { WorkspaceModel } from "@/src/workspaces/models/Workspace.model";
+import { sendReminderNotificationEmailService } from "./reminderNotifications.service";
 import { ReminderModel } from "../models/Reminder.model";
 import type {
     CreateReminderServiceInput,
     DeleteReminderServiceInput,
+    ReminderChannel,
     ReminderDocument,
     ReminderMemberResponse,
     ReminderMemberResponseStatus,
@@ -380,6 +383,103 @@ function ensureReminderCanBeManagedByActor(
     );
 }
 
+function shouldSendEmailForChannel(channel: ReminderChannel): boolean {
+    return channel === "email" || channel === "both";
+}
+
+function areObjectIdArraysEqual(
+    left: Types.ObjectId[],
+    right: Types.ObjectId[]
+): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+
+    const normalizeIds = (values: Types.ObjectId[]): string[] =>
+        values
+            .map((value) => value.toString())
+            .sort((firstValue, secondValue) => firstValue.localeCompare(secondValue));
+
+    const normalizedLeft = normalizeIds(left);
+    const normalizedRight = normalizeIds(right);
+
+    return normalizedLeft.every(
+        (value, index) => value === normalizedRight[index]
+    );
+}
+
+function didReminderEmailRelevantFieldsChange(
+    previousReminder: ReminderDocument,
+    nextReminder: ReminderDocument
+): boolean {
+    if (previousReminder.title !== nextReminder.title) {
+        return true;
+    }
+
+    if ((previousReminder.description ?? null) !== (nextReminder.description ?? null)) {
+        return true;
+    }
+
+    if (previousReminder.type !== nextReminder.type) {
+        return true;
+    }
+
+    if ((previousReminder.priority ?? null) !== (nextReminder.priority ?? null)) {
+        return true;
+    }
+
+    if (previousReminder.channel !== nextReminder.channel) {
+        return true;
+    }
+
+    if (previousReminder.dueDate.getTime() !== nextReminder.dueDate.getTime()) {
+        return true;
+    }
+
+    if (
+        !areObjectIdArraysEqual(
+            previousReminder.recipientMemberIds,
+            nextReminder.recipientMemberIds
+        )
+    ) {
+        return true;
+    }
+
+    return false;
+}
+
+async function dispatchReminderEmailIfNeeded(
+    workspaceId: Types.ObjectId,
+    reminder: ReminderDocument
+): Promise<void> {
+    if (!shouldSendEmailForChannel(reminder.channel)) {
+        return;
+    }
+
+    const workspace = await WorkspaceModel.findById(workspaceId).lean();
+
+    if (!workspace) {
+        throw new ReminderServiceError(
+            "El workspace del recordatorio no fue encontrado.",
+            404,
+            "WORKSPACE_NOT_FOUND"
+        );
+    }
+
+    try {
+        await sendReminderNotificationEmailService({
+            workspace,
+            reminder,
+        });
+    } catch (error) {
+        console.error("[REMINDER_EMAIL_NOTIFICATION_ERROR]", {
+            workspaceId: workspaceId.toString(),
+            reminderId: reminder._id.toString(),
+            error,
+        });
+    }
+}
+
 export async function getRemindersService(
     workspaceId: Types.ObjectId,
     workspaceMemberId: Types.ObjectId,
@@ -469,7 +569,7 @@ export async function createReminderService(
         isVisible: body.isVisible ?? true,
     });
 
-    return buildReminderResponse({
+    const createdReminder: ReminderDocument = {
         _id: reminder._id,
         workspaceId: reminder.workspaceId,
         createdByMemberId: reminder.createdByMemberId,
@@ -489,7 +589,11 @@ export async function createReminderService(
         isVisible: reminder.isVisible ?? true,
         createdAt: reminder.createdAt,
         updatedAt: reminder.updatedAt,
-    });
+    };
+
+    await dispatchReminderEmailIfNeeded(workspaceId, createdReminder);
+
+    return buildReminderResponse(createdReminder);
 }
 
 export async function updateReminderService(
@@ -608,6 +712,14 @@ export async function updateReminderService(
 
     if (!updatedReminder) {
         return null;
+    }
+
+    const shouldSendUpdatedReminderEmail =
+        shouldSendEmailForChannel(updatedReminder.channel) &&
+        didReminderEmailRelevantFieldsChange(existingReminder, updatedReminder);
+
+    if (shouldSendUpdatedReminderEmail) {
+        await dispatchReminderEmailIfNeeded(workspaceId, updatedReminder);
     }
 
     return buildReminderResponse(updatedReminder);

@@ -1,5 +1,4 @@
 // src/config/env.ts
-
 import "dotenv/config";
 
 import { z } from "zod";
@@ -48,10 +47,23 @@ const EnvSchema = z.object({
     REFRESH_TOKEN_EXPIRES_IN: z.string().min(1).default("7d"),
 
     CORS_ORIGINS: z.string().default("http://localhost:5173"),
+    APP_BASE_URL: z.string().url().default("http://localhost:5173"),
+    VERIFY_EMAIL_PATH: z.string().min(1).default("/auth/verify-email"),
+    RESET_PASSWORD_PATH: z.string().min(1).default("/auth/reset-password"),
+    APP_NAME: z.string().min(1).default("ERP Expenses"),
 
     COOKIE_SECURE: z.preprocess(parseEnvBoolean, z.boolean()).default(false),
 
     COOKIE_SAME_SITE: z.enum(["lax", "strict", "none"]).default("lax"),
+
+    EMAIL_PROVIDER: z.enum(["console", "smtp"]).default("console"),
+    EMAIL_FROM_NAME: z.string().min(1).default("ERP Expenses"),
+    EMAIL_FROM_ADDRESS: z.string().email().default("no-reply@example.com"),
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().int().positive().optional(),
+    SMTP_SECURE: z.preprocess(parseEnvBoolean, z.boolean()).optional(),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
 
     CLOUDINARY_CLOUD_NAME: z.string().min(1, "CLOUDINARY_CLOUD_NAME is required"),
     CLOUDINARY_API_KEY: z.string().min(1, "CLOUDINARY_API_KEY is required"),
