@@ -56,14 +56,10 @@ const EnvSchema = z.object({
 
     COOKIE_SAME_SITE: z.enum(["lax", "strict", "none"]).default("lax"),
 
-    EMAIL_PROVIDER: z.enum(["console", "smtp"]).default("console"),
+    EMAIL_PROVIDER: z.enum(["console", "resend"]).default("console"),
     EMAIL_FROM_NAME: z.string().min(1).default("ERP Expenses"),
     EMAIL_FROM_ADDRESS: z.string().email().default("no-reply@example.com"),
-    SMTP_HOST: z.string().optional(),
-    SMTP_PORT: z.coerce.number().int().positive().optional(),
-    SMTP_SECURE: z.preprocess(parseEnvBoolean, z.boolean()).optional(),
-    SMTP_USER: z.string().optional(),
-    SMTP_PASS: z.string().optional(),
+    RESEND_API_KEY: z.string().optional(),
 
     CLOUDINARY_CLOUD_NAME: z.string().min(1, "CLOUDINARY_CLOUD_NAME is required"),
     CLOUDINARY_API_KEY: z.string().min(1, "CLOUDINARY_API_KEY is required"),

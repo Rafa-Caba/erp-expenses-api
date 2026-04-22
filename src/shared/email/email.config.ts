@@ -1,10 +1,6 @@
 // src/shared/email/email.config.ts
 import { getEnv } from "@/src/config/env";
-import type {
-    AppLinkOptions,
-    EmailProvider,
-    SmtpTransportOptions,
-} from "@/src/shared/email/email.types";
+import type { AppLinkOptions, EmailProvider } from "@/src/shared/email/email.types";
 
 function normalizeBaseUrl(value: string): string {
     return value.endsWith("/") ? value.slice(0, -1) : value;
@@ -24,8 +20,8 @@ function getOptionalTrimmedEnv(name: string): string | null {
 function getEmailProvider(): EmailProvider {
     const envValue = getOptionalTrimmedEnv("EMAIL_PROVIDER");
 
-    if (envValue === "smtp") {
-        return "smtp";
+    if (envValue === "resend") {
+        return "resend";
     }
 
     return "console";
@@ -47,40 +43,23 @@ export function getEmailFromHeader(): string {
     return `"${getEmailSenderName()}" <${getEmailSenderAddress()}>`;
 }
 
+export function getResendApiKey(): string {
+    const apiKey = getOptionalTrimmedEnv("RESEND_API_KEY");
+
+    if (!apiKey) {
+        throw new Error("RESEND_API_KEY is required when EMAIL_PROVIDER=resend");
+    }
+
+    return apiKey;
+}
+
 export function getEmailProviderConfig(): {
     provider: EmailProvider;
-    smtp: SmtpTransportOptions | null;
 } {
     getEnv();
 
-    const provider = getEmailProvider();
-
-    if (provider !== "smtp") {
-        return {
-            provider,
-            smtp: null,
-        };
-    }
-
-    const host = getOptionalTrimmedEnv("SMTP_HOST");
-    const port = Number(getOptionalTrimmedEnv("SMTP_PORT") ?? "587");
-    const secure =
-        (getOptionalTrimmedEnv("SMTP_SECURE") ?? "false").toLowerCase() === "true";
-    const user = getOptionalTrimmedEnv("SMTP_USER");
-    const pass = getOptionalTrimmedEnv("SMTP_PASS");
-
-    if (!host || !Number.isFinite(port) || port <= 0) {
-        throw new Error("SMTP configuration is incomplete. Please set SMTP_HOST and SMTP_PORT.");
-    }
-
     return {
-        provider,
-        smtp: {
-            host,
-            port,
-            secure,
-            auth: user && pass ? { user, pass } : undefined,
-        },
+        provider: getEmailProvider(),
     };
 }
 

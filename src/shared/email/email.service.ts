@@ -1,4 +1,7 @@
 // src/shared/email/email.service.ts
+
+import { Resend } from "resend";
+
 import {
     buildAppUrl,
     getAppName,
@@ -7,6 +10,7 @@ import {
     getEmailVerificationTtlMinutes,
     getPasswordResetTtlMinutes,
     getResetPasswordPath,
+    getResendApiKey,
     getVerifyEmailPath,
 } from "@/src/shared/email/email.config";
 import {
@@ -15,30 +19,20 @@ import {
     buildReminderEmailTemplate,
 } from "@/src/shared/email/email.templates";
 import type {
-    NodemailerModule,
     ReminderEmailTemplateInput,
     SendEmailInput,
     SendEmailResult,
-    SmtpTransporter,
 } from "@/src/shared/email/email.types";
 
-let cachedTransporter: SmtpTransporter | null = null;
+let cachedResendClient: Resend | null = null;
 
-function getSmtpTransporter(): SmtpTransporter {
-    if (cachedTransporter) {
-        return cachedTransporter;
+function getResendClient(): Resend {
+    if (cachedResendClient) {
+        return cachedResendClient;
     }
 
-    const config = getEmailProviderConfig();
-
-    if (config.provider !== "smtp" || !config.smtp) {
-        throw new Error("SMTP transporter is not available when EMAIL_PROVIDER is not smtp.");
-    }
-
-    const nodemailerModule = require("nodemailer") as NodemailerModule;
-    cachedTransporter = nodemailerModule.createTransport(config.smtp);
-
-    return cachedTransporter;
+    cachedResendClient = new Resend(getResendApiKey());
+    return cachedResendClient;
 }
 
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
@@ -59,20 +53,24 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
         };
     }
 
-    const transporter = getSmtpTransporter();
-    const info = await transporter.sendMail({
+    const resendClient = getResendClient();
+    const response = await resendClient.emails.send({
         from: getEmailFromHeader(),
-        to: input.to,
+        to: [input.to],
         subject: input.subject,
         html: input.html,
         text: input.text,
     });
 
+    if (response.error) {
+        throw new Error(response.error.message);
+    }
+
     return {
-        accepted: info.accepted ?? [input.to],
-        rejected: info.rejected ?? [],
-        messageId: info.messageId ?? null,
-        provider: "smtp",
+        accepted: [input.to],
+        rejected: [],
+        messageId: response.data?.id ?? null,
+        provider: "resend",
     };
 }
 

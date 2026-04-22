@@ -1,5 +1,6 @@
 // src/shared/email/email.types.ts
-export type EmailProvider = "console" | "smtp";
+
+export type EmailProvider = "console" | "resend";
 
 export interface AppLinkOptions {
     path: string;
@@ -19,38 +20,6 @@ export interface SendEmailResult {
     rejected: string[];
     messageId: string | null;
     provider: EmailProvider;
-}
-
-export interface SmtpTransportOptions {
-    host: string;
-    port: number;
-    secure: boolean;
-    auth?: {
-        user: string;
-        pass: string;
-    };
-}
-
-export interface SmtpSendMailOptions {
-    from: string;
-    to: string;
-    subject: string;
-    html: string;
-    text: string;
-}
-
-export interface SmtpSendMailInfo {
-    accepted?: string[];
-    rejected?: string[];
-    messageId?: string;
-}
-
-export interface SmtpTransporter {
-    sendMail(mailOptions: SmtpSendMailOptions): Promise<SmtpSendMailInfo>;
-}
-
-export interface NodemailerModule {
-    createTransport(options: SmtpTransportOptions): SmtpTransporter;
 }
 
 export interface EmailVerificationTemplateInput {
