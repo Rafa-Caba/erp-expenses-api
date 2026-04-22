@@ -1,9 +1,12 @@
+// src/users/services/user.service.ts
+
 import bcrypt from "bcryptjs";
 
 import { RefreshTokenModel } from "@/src/auth/models/RefreshToken.model";
 import type { ListUsersQueryInput } from "@/src/users/schemas/user.schema";
 import { UserModel } from "@/src/users/models/User.model";
 import type {
+    AdminResetUserPasswordInput,
     CreateUserInput,
     PublicUserResponse,
     UpdateUserInput,
@@ -49,6 +52,7 @@ type PublicUserLike = IdLike & {
     role: "USER" | "ADMIN";
     isActive: boolean;
     isEmailVerified: boolean;
+    mustChangePassword: boolean;
     lastLoginAt?: Date | null;
     createdAt: Date;
     updatedAt: Date;
@@ -92,6 +96,7 @@ function mapPublicUser(user: PublicUserLike): PublicUserResponse {
         role: user.role,
         isActive: user.isActive,
         isEmailVerified: user.isEmailVerified,
+        mustChangePassword: user.mustChangePassword,
         lastLoginAt: normalizeNullableDate(user.lastLoginAt),
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
@@ -199,9 +204,11 @@ export async function createUserService(
         passwordHash,
         phone: input.phone ?? null,
         avatarUrl: input.avatarUrl ?? null,
+        avatarPublicId: input.avatarPublicId ?? null,
         role: input.role ?? "USER",
         isActive: input.isActive ?? true,
         isEmailVerified: input.isEmailVerified ?? false,
+        mustChangePassword: input.mustChangePassword ?? true,
         emailVerificationTokenHash: null,
         emailVerificationExpiresAt: null,
         passwordResetTokenHash: null,
@@ -249,7 +256,10 @@ export async function updateUserService(
     }
 
     const shouldRevokeSessions =
-        typeof input.isActive !== "undefined" && input.isActive === false && currentUser.isActive;
+        (typeof input.isActive !== "undefined" &&
+            input.isActive === false &&
+            currentUser.isActive) ||
+        (typeof input.email !== "undefined" && input.email !== currentUser.email);
 
     if (typeof input.fullName !== "undefined") {
         currentUser.fullName = input.fullName;
@@ -265,6 +275,10 @@ export async function updateUserService(
 
     if (typeof input.avatarUrl !== "undefined") {
         currentUser.avatarUrl = input.avatarUrl;
+    }
+
+    if (typeof input.avatarPublicId !== "undefined") {
+        currentUser.avatarPublicId = input.avatarPublicId;
     }
 
     if (typeof input.role !== "undefined") {
@@ -288,6 +302,36 @@ export async function updateUserService(
     return {
         ok: true,
         data: mapPublicUser(currentUser),
+    };
+}
+
+export async function adminResetUserPasswordService(
+    id: string,
+    input: AdminResetUserPasswordInput
+): Promise<ServiceResult<PublicUserResponse>> {
+    const user = await UserModel.findById(id);
+
+    if (!user) {
+        return {
+            ok: false,
+            error: {
+                code: "USER_NOT_FOUND",
+                message: "User not found",
+            },
+        };
+    }
+
+    user.passwordHash = await bcrypt.hash(input.newPassword, 12);
+    user.passwordResetTokenHash = null;
+    user.passwordResetExpiresAt = null;
+    user.mustChangePassword = input.mustChangePassword ?? true;
+
+    await user.save();
+    await revokeAllUserRefreshTokens(getDocumentId(user));
+
+    return {
+        ok: true,
+        data: mapPublicUser(user),
     };
 }
 

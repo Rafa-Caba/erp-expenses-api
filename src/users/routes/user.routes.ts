@@ -1,6 +1,9 @@
+// src/users/routes/user.routes.ts
+
 import { Router } from "express";
 
 import {
+    adminResetUserPasswordController,
     createUserController,
     deleteUserController,
     getUserByIdController,
@@ -18,6 +21,7 @@ userRouter.get("/", listUsersController);
 userRouter.get("/:id", getUserByIdController);
 userRouter.post("/", createUserController);
 userRouter.patch("/:id", updateUserController);
+userRouter.patch("/:id/reset-password", adminResetUserPasswordController);
 userRouter.delete("/:id", deleteUserController);
 
 export default userRouter;

@@ -41,6 +41,7 @@ export interface AuthUserResponse {
 	role: UserRole;
 	isActive: boolean;
 	isEmailVerified: boolean;
+	mustChangePassword: boolean;
 	lastLoginAt: Date | null;
 	createdAt: Date;
 	updatedAt: Date;

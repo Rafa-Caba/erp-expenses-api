@@ -16,6 +16,7 @@ export interface UserEntity {
 
     isActive: boolean;
     isEmailVerified: boolean;
+    mustChangePassword: boolean;
 
     emailVerificationTokenHash: string | null;
     emailVerificationExpiresAt: Date | null;
@@ -38,6 +39,7 @@ export interface PublicUserResponse {
     role: UserRole;
     isActive: boolean;
     isEmailVerified: boolean;
+    mustChangePassword: boolean;
     lastLoginAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
@@ -53,6 +55,7 @@ export type CreateUserInput = {
     role?: UserRole;
     isActive?: boolean;
     isEmailVerified?: boolean;
+    mustChangePassword?: boolean;
 };
 
 export type UpdateUserInput = Partial<{
@@ -65,3 +68,8 @@ export type UpdateUserInput = Partial<{
     isActive: boolean;
     isEmailVerified: boolean;
 }>;
+
+export type AdminResetUserPasswordInput = {
+    newPassword: string;
+    mustChangePassword?: boolean;
+};

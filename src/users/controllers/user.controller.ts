@@ -1,13 +1,17 @@
+// src/users/controllers/user.controller.ts
+
 import type { RequestHandler } from "express";
 import { ZodError } from "zod";
 
 import {
+    adminResetUserPasswordSchema,
     createUserSchema,
     listUsersQuerySchema,
     updateUserSchema,
     userIdParamSchema,
 } from "@/src/users/schemas/user.schema";
 import {
+    adminResetUserPasswordService,
     createUserService,
     deleteUserService,
     getUserByIdService,
@@ -104,6 +108,37 @@ export const updateUserController: RequestHandler = (req, res, next) => {
             }
 
             return res.status(200).json(result.data);
+        })
+        .catch(next);
+};
+
+export const adminResetUserPasswordController: RequestHandler = (req, res, next) => {
+    const parsedParams = userIdParamSchema.safeParse(req.params);
+
+    if (!parsedParams.success) {
+        return res.status(400).json(handleZodError(parsedParams.error));
+    }
+
+    const parsedBody = adminResetUserPasswordSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+        return res.status(400).json(handleZodError(parsedBody.error));
+    }
+
+    return adminResetUserPasswordService(parsedParams.data.id, parsedBody.data)
+        .then((result) => {
+            if (!result.ok) {
+                if (result.error.code === "USER_NOT_FOUND") {
+                    return res.status(404).json(result.error);
+                }
+
+                return res.status(400).json(result.error);
+            }
+
+            return res.status(200).json({
+                message: "User password reset successfully",
+                user: result.data,
+            });
         })
         .catch(next);
 };

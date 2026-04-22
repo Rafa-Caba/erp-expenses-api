@@ -1,3 +1,5 @@
+// src/users/schemas/user.schema.ts
+
 import { z } from "zod";
 
 export const userRoleSchema = z.enum(["USER", "ADMIN"]);
@@ -26,6 +28,7 @@ export const createUserSchema = z.object({
     role: userRoleSchema.optional(),
     isActive: z.boolean().optional(),
     isEmailVerified: z.boolean().optional(),
+    mustChangePassword: z.boolean().optional(),
 });
 
 export const updateUserSchema = z
@@ -42,6 +45,11 @@ export const updateUserSchema = z
         message: "At least one field must be provided",
     });
 
+export const adminResetUserPasswordSchema = z.object({
+    newPassword: z.string().trim().min(8).max(255),
+    mustChangePassword: z.boolean().optional(),
+});
+
 export const listUsersQuerySchema = z.object({
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(10),
@@ -53,4 +61,5 @@ export const listUsersQuerySchema = z.object({
 export type UserIdParamInput = z.infer<typeof userIdParamSchema>;
 export type CreateUserSchemaInput = z.infer<typeof createUserSchema>;
 export type UpdateUserSchemaInput = z.infer<typeof updateUserSchema>;
+export type AdminResetUserPasswordSchemaInput = z.infer<typeof adminResetUserPasswordSchema>;
 export type ListUsersQueryInput = z.infer<typeof listUsersQuerySchema>;

@@ -56,6 +56,11 @@ const UserSchema = new Schema(
             type: Boolean,
             default: false,
         },
+        mustChangePassword: {
+            type: Boolean,
+            required: true,
+            default: false,
+        },
 
         emailVerificationTokenHash: {
             type: String,

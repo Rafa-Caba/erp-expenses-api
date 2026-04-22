@@ -92,6 +92,7 @@ type AuthUserLike = IdLike & {
     role: UserRole;
     isActive: boolean;
     isEmailVerified: boolean;
+    mustChangePassword: boolean;
     lastLoginAt?: Date | null;
     createdAt: Date;
     updatedAt: Date;
@@ -244,6 +245,7 @@ function mapUserToAuthUser(user: AuthUserLike): AuthUserResponse {
         role: user.role,
         isActive: user.isActive,
         isEmailVerified: user.isEmailVerified,
+        mustChangePassword: user.mustChangePassword,
         lastLoginAt: normalizeNullableDate(user.lastLoginAt),
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
@@ -519,6 +521,7 @@ export async function registerAuthService(
         role: "USER",
         isActive: true,
         isEmailVerified: false,
+        mustChangePassword: false,
         emailVerificationTokenHash: verificationToken.tokenHash,
         emailVerificationExpiresAt: verificationToken.expiresAt,
         passwordResetTokenHash: null,
@@ -746,7 +749,7 @@ export async function getCurrentAuthUserService(
     userId: string
 ): Promise<ServiceResult<AuthUserResponse>> {
     const user = await UserModel.findById(userId).select(
-        "fullName email phone avatarUrl role isActive isEmailVerified lastLoginAt createdAt updatedAt"
+        "fullName email phone avatarUrl role isActive isEmailVerified mustChangePassword lastLoginAt createdAt updatedAt"
     );
 
     if (!user) {
@@ -849,6 +852,7 @@ export async function changePasswordAuthService(
     user.passwordHash = await bcrypt.hash(input.newPassword, 12);
     user.passwordResetTokenHash = null;
     user.passwordResetExpiresAt = null;
+    user.mustChangePassword = false;
 
     await user.save();
     await revokeAllRefreshTokensForUser(getDocumentId(user));
@@ -924,6 +928,7 @@ export async function resetPasswordAuthService(
     user.passwordHash = await bcrypt.hash(input.newPassword, 12);
     user.passwordResetTokenHash = null;
     user.passwordResetExpiresAt = null;
+    user.mustChangePassword = false;
 
     await user.save();
     await revokeAllRefreshTokensForUser(getDocumentId(user));
