@@ -42,6 +42,10 @@ const memberPermissions: WorkspacePermission[] = [
     "savingGoals.create",
     "savingGoals.update",
     "savingGoals.delete",
+
+    "subscriptions.read",
+    "subscriptions.create",
+    "subscriptions.update",
 ];
 
 const viewerPermissions: WorkspacePermission[] = [
@@ -55,6 +59,7 @@ const viewerPermissions: WorkspacePermission[] = [
     "transactions.read",
     "budgets.read",
     "debts.read",
+    "subscriptions.read",
 ];
 
 const recommendedPermissionsByRole: Record<MemberRole, WorkspacePermission[]> = {

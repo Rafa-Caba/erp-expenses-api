@@ -63,6 +63,11 @@ export const workspacePermissionValues = [
     "reminders.update",
     "reminders.delete",
 
+    "subscriptions.read",
+    "subscriptions.create",
+    "subscriptions.update",
+    "subscriptions.delete",
+
     "reports.read",
     "reports.create",
     "reports.update",

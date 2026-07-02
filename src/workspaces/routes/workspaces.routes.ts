@@ -33,6 +33,7 @@ import { budgetRouter } from "@/src/budgets/routes/budgets.routes";
 import { savingGoalRouter } from "@/src/savingGoals/routes/savingGoals.routes";
 import { reminderRouter } from "@/src/reminders/routes/reminders.routes";
 import { reportRouter } from "@/src/reports/routes/reports.routes";
+import { subscriptionRouter } from "@/src/subscriptions/routes/subscriptions.routes";
 import { reconciliationRouter } from "@/src/reconciliations/routes/reconciliations.routes";
 import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
 import { requireWorkspacePermission } from "@/src/middlewares/requireWorkspacePermission";
@@ -55,6 +56,7 @@ workspacesRouter.use("/:workspaceId/budgets", budgetRouter);
 workspacesRouter.use("/:workspaceId/saving-goals", savingGoalRouter);
 workspacesRouter.use("/:workspaceId/reminders", reminderRouter);
 workspacesRouter.use("/:workspaceId/reports", reportRouter);
+workspacesRouter.use("/:workspaceId/subscriptions", subscriptionRouter);
 
 workspacesRouter.get("/", getWorkspacesController);
 
