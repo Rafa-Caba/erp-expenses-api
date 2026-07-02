@@ -1,3 +1,5 @@
+// src/payments/schemas/payments.schemas.ts
+
 import { z } from "zod";
 
 import {
@@ -8,6 +10,37 @@ import {
 function isValidDateString(value: string): boolean {
     const parsedDate = new Date(value);
     return !Number.isNaN(parsedDate.getTime());
+}
+
+function roundMoney(value: number): number {
+    return Number(value.toFixed(2));
+}
+
+function isValidResolvedPaymentAmounts(input: {
+    amount?: number;
+    principalAmount?: number;
+    feeAmount?: number;
+}): boolean {
+    const { amount, principalAmount, feeAmount } = input;
+
+    if (amount === undefined) {
+        return true;
+    }
+
+    const resolvedPrincipalAmount =
+        principalAmount !== undefined
+            ? principalAmount
+            : feeAmount !== undefined
+                ? roundMoney(amount - feeAmount)
+                : amount;
+    const resolvedFeeAmount =
+        feeAmount !== undefined
+            ? feeAmount
+            : principalAmount !== undefined
+                ? roundMoney(amount - principalAmount)
+                : 0;
+
+    return roundMoney(resolvedPrincipalAmount + resolvedFeeAmount) === roundMoney(amount);
 }
 
 const formBooleanSchema = z.union([
@@ -36,6 +69,12 @@ const nullableTrimmedStringSchema = z
         return normalizedValue.length > 0 ? normalizedValue : null;
     });
 
+const nonNegativeMoneySchema = z
+    .number({
+        message: "El monto debe ser numérico.",
+    })
+    .min(0, "El monto no puede ser menor a 0.");
+
 const createPaymentBodySchema = z
     .object({
         debtId: z.string().trim().min(1, "El id de la deuda es obligatorio."),
@@ -48,6 +87,9 @@ const createPaymentBodySchema = z
                 message: "El monto debe ser numérico.",
             })
             .positive("El monto debe ser mayor a 0."),
+        principalAmount: nonNegativeMoneySchema.optional(),
+        feeAmount: nonNegativeMoneySchema.optional(),
+        cashflowDirection: z.enum(["in", "out"]).optional(),
         currency: z.enum(["MXN", "USD"], {
             message: "La moneda no es válida.",
         }),
@@ -118,6 +160,20 @@ const createPaymentBodySchema = z
                 message: "No puedes enviar cardId y accountId al mismo tiempo.",
             });
         }
+
+        if (
+            !isValidResolvedPaymentAmounts({
+                amount: body.amount,
+                principalAmount: body.principalAmount,
+                feeAmount: body.feeAmount,
+            })
+        ) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["principalAmount"],
+                message: "principalAmount más feeAmount debe coincidir con amount.",
+            });
+        }
     });
 
 const updatePaymentBodySchema = z
@@ -137,6 +193,9 @@ const updatePaymentBodySchema = z
             })
             .positive("El monto debe ser mayor a 0.")
             .optional(),
+        principalAmount: nonNegativeMoneySchema.optional(),
+        feeAmount: nonNegativeMoneySchema.optional(),
+        cashflowDirection: z.enum(["in", "out"]).optional(),
         currency: z
             .enum(["MXN", "USD"], {
                 message: "La moneda no es válida.",
@@ -211,6 +270,21 @@ const updatePaymentBodySchema = z
                 code: "custom",
                 path: ["cardId"],
                 message: "No puedes enviar cardId y accountId al mismo tiempo.",
+            });
+        }
+
+        if (
+            body.amount !== undefined &&
+            !isValidResolvedPaymentAmounts({
+                amount: body.amount,
+                principalAmount: body.principalAmount,
+                feeAmount: body.feeAmount,
+            })
+        ) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["principalAmount"],
+                message: "principalAmount más feeAmount debe coincidir con amount.",
             });
         }
     });

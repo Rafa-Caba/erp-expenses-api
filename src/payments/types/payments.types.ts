@@ -1,7 +1,12 @@
+// src/payments/types/payments.types.ts
+
 import type { ParamsDictionary } from "express-serve-static-core";
 import type { Types } from "mongoose";
 
-import type { CurrencyCode } from "@/src/shared/types/common";
+import type {
+    CashflowDirection,
+    CurrencyCode,
+} from "@/src/shared/types/common";
 import type { WorkspaceDocument } from "@/src/workspaces/models/Workspace.model";
 
 export const PAYMENT_STATUS_VALUES = [
@@ -32,6 +37,9 @@ export interface PaymentDocument {
     memberId?: Types.ObjectId | null;
     transactionId?: Types.ObjectId | null;
     amount: number;
+    principalAmount: number;
+    feeAmount: number;
+    cashflowDirection: CashflowDirection;
     currency: CurrencyCode;
     paymentDate: Date;
     method?: PaymentMethod | null;
@@ -59,6 +67,9 @@ export interface CreatePaymentBody {
     memberId?: string | null;
     transactionId?: string | null;
     amount: number;
+    principalAmount?: number;
+    feeAmount?: number;
+    cashflowDirection?: CashflowDirection;
     currency: CurrencyCode;
     paymentDate: string;
     method?: PaymentMethod | null;
@@ -75,6 +86,9 @@ export interface UpdatePaymentBody {
     memberId?: string | null;
     transactionId?: string | null;
     amount?: number;
+    principalAmount?: number;
+    feeAmount?: number;
+    cashflowDirection?: CashflowDirection;
     currency?: CurrencyCode;
     paymentDate?: string;
     method?: PaymentMethod | null;

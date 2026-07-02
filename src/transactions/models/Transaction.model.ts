@@ -4,7 +4,11 @@ import { Schema, model, type Model } from "mongoose";
 
 import type { TransactionDocument } from "../types/transaction.types";
 import { TRANSACTION_STATUS_VALUES } from "../types/transaction.types";
-import type { CurrencyCode, TransactionType } from "@/src/shared/types/common";
+import type {
+    CashflowDirection,
+    CurrencyCode,
+    TransactionType,
+} from "@/src/shared/types/common";
 
 const TRANSACTION_TYPE_VALUES: TransactionType[] = [
     "expense",
@@ -14,6 +18,7 @@ const TRANSACTION_TYPE_VALUES: TransactionType[] = [
     "adjustment",
 ];
 
+const CASHFLOW_DIRECTION_VALUES: CashflowDirection[] = ["in", "out"];
 const CURRENCY_VALUES: CurrencyCode[] = ["MXN", "USD"];
 
 const transactionSchema = new Schema<TransactionDocument>(
@@ -38,6 +43,11 @@ const transactionSchema = new Schema<TransactionDocument>(
             ref: "Card",
             default: null,
         },
+        debtId: {
+            type: Schema.Types.ObjectId,
+            ref: "Debt",
+            default: null,
+        },
         memberId: {
             type: Schema.Types.ObjectId,
             ref: "WorkspaceMember",
@@ -52,6 +62,12 @@ const transactionSchema = new Schema<TransactionDocument>(
             type: String,
             enum: TRANSACTION_TYPE_VALUES,
             required: true,
+            trim: true,
+        },
+        cashflowDirection: {
+            type: String,
+            enum: CASHFLOW_DIRECTION_VALUES,
+            default: null,
             trim: true,
         },
         amount: {
@@ -137,6 +153,8 @@ const transactionSchema = new Schema<TransactionDocument>(
 
 transactionSchema.index({ workspaceId: 1, transactionDate: -1 });
 transactionSchema.index({ workspaceId: 1, type: 1, status: 1 });
+transactionSchema.index({ workspaceId: 1, cashflowDirection: 1, transactionDate: -1 });
+transactionSchema.index({ workspaceId: 1, debtId: 1, transactionDate: -1 });
 transactionSchema.index({ workspaceId: 1, memberId: 1, transactionDate: -1 });
 transactionSchema.index({ workspaceId: 1, accountId: 1, transactionDate: -1 });
 transactionSchema.index({ workspaceId: 1, destinationAccountId: 1, transactionDate: -1 });

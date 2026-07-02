@@ -2,7 +2,10 @@
 
 import { z } from "zod";
 
-import { REPORT_GROUP_BY_VALUES } from "../types/reports.types";
+import {
+    CATEGORY_BREAKDOWN_TYPE_VALUES,
+    REPORT_GROUP_BY_VALUES,
+} from "../types/reports.types";
 import { REPORT_EXPORT_FORMAT_VALUES } from "../types/reportExports.types";
 
 function isValidDateString(value: string): boolean {
@@ -57,6 +60,7 @@ const analyticsFiltersSchema = z
         cardId: nullableTrimmedStringSchema,
         includeArchived: z.union([z.boolean(), z.null()]).optional(),
         groupBy: z.enum(REPORT_GROUP_BY_VALUES).nullable().optional(),
+        type: z.enum(CATEGORY_BREAKDOWN_TYPE_VALUES).nullable().optional(),
     })
     .superRefine((filters, ctx) => {
         if (filters.dateFrom && filters.dateTo) {

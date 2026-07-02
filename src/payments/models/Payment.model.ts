@@ -1,6 +1,11 @@
+// src/payments/models/Payment.model.ts
+
 import { Schema, model, type Model } from "mongoose";
 
-import type { CurrencyCode } from "@/src/shared/types/common";
+import type {
+    CashflowDirection,
+    CurrencyCode,
+} from "@/src/shared/types/common";
 import type { PaymentDocument } from "../types/payments.types";
 import {
     PAYMENT_METHOD_VALUES,
@@ -8,6 +13,7 @@ import {
 } from "../types/payments.types";
 
 const CURRENCY_VALUES: CurrencyCode[] = ["MXN", "USD"];
+const CASHFLOW_DIRECTION_VALUES: CashflowDirection[] = ["in", "out"];
 
 const paymentSchema = new Schema<PaymentDocument>(
     {
@@ -45,6 +51,23 @@ const paymentSchema = new Schema<PaymentDocument>(
             type: Number,
             required: true,
             min: 0.01,
+        },
+        principalAmount: {
+            type: Number,
+            required: true,
+            min: 0,
+        },
+        feeAmount: {
+            type: Number,
+            required: true,
+            min: 0,
+            default: 0,
+        },
+        cashflowDirection: {
+            type: String,
+            enum: CASHFLOW_DIRECTION_VALUES,
+            required: true,
+            trim: true,
         },
         currency: {
             type: String,
@@ -93,6 +116,7 @@ const paymentSchema = new Schema<PaymentDocument>(
 );
 
 paymentSchema.index({ workspaceId: 1, debtId: 1, paymentDate: -1 });
+paymentSchema.index({ workspaceId: 1, cashflowDirection: 1, paymentDate: -1 });
 paymentSchema.index({ workspaceId: 1, accountId: 1, paymentDate: -1 });
 paymentSchema.index({ workspaceId: 1, cardId: 1, paymentDate: -1 });
 paymentSchema.index({ workspaceId: 1, memberId: 1, paymentDate: -1 });

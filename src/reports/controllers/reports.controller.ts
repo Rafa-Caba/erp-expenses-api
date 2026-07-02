@@ -19,6 +19,7 @@ import {
 } from "../services/reports.service";
 import type {
     CreateReportBody,
+    CategoryBreakdownType,
     ReportAnalyticsQuery,
     ReportParams,
     UpdateReportBody,
@@ -99,6 +100,23 @@ function getQueryGroupByValue(
     return null;
 }
 
+function getQueryCategoryBreakdownTypeValue(
+    value: string | ParsedQs | (string | ParsedQs)[] | undefined
+): CategoryBreakdownType | null {
+    const parsedValue = getQueryStringValue(value);
+
+    if (
+        parsedValue === "expense" ||
+        parsedValue === "income" ||
+        parsedValue === "adjustment" ||
+        parsedValue === "all"
+    ) {
+        return parsedValue;
+    }
+
+    return null;
+}
+
 function buildAnalyticsQuery(query: ParsedQs): ReportAnalyticsQuery {
     return {
         dateFrom: getQueryStringValue(query.dateFrom),
@@ -110,6 +128,7 @@ function buildAnalyticsQuery(query: ParsedQs): ReportAnalyticsQuery {
         cardId: getQueryStringValue(query.cardId),
         includeArchived: getQueryBooleanValue(query.includeArchived),
         groupBy: getQueryGroupByValue(query.groupBy),
+        type: getQueryCategoryBreakdownTypeValue(query.type),
     };
 }
 

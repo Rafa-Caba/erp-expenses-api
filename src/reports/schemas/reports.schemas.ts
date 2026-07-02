@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import {
+    CATEGORY_BREAKDOWN_TYPE_VALUES,
     REPORT_FILE_RESOURCE_TYPE_VALUES,
     REPORT_GROUP_BY_VALUES,
     REPORT_STATUS_VALUES,
@@ -61,6 +62,7 @@ const reportFiltersSchema = z
         cardId: nullableTrimmedStringSchema,
         includeArchived: z.union([z.boolean(), z.null()]).optional(),
         groupBy: z.enum(REPORT_GROUP_BY_VALUES).nullable().optional(),
+        type: z.enum(CATEGORY_BREAKDOWN_TYPE_VALUES).nullable().optional(),
     })
     .superRefine((filters, ctx) => {
         if (filters.dateFrom && filters.dateTo) {
@@ -312,6 +314,7 @@ const analyticsQuerySchema = z
             ])
             .optional(),
         groupBy: z.enum(REPORT_GROUP_BY_VALUES).nullable().optional(),
+        type: z.enum(CATEGORY_BREAKDOWN_TYPE_VALUES).nullable().optional(),
     })
     .superRefine((query, ctx) => {
         if (query.dateFrom && query.dateTo) {

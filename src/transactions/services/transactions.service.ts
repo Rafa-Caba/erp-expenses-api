@@ -2,13 +2,19 @@
 
 import { Types } from "mongoose";
 
+import { DebtModel } from "@/src/debts/models/Debt.model";
+import type { DebtDocument } from "@/src/debts/types/debts.types";
+import type {
+    CashflowDirection,
+    TransactionType,
+} from "@/src/shared/types/common";
 import { TransactionModel } from "../models/Transaction.model";
 import type {
     ArchiveTransactionServiceInput,
     CreateTransactionServiceInput,
+    TransactionDocument,
     TransactionStatus,
     UpdateTransactionServiceInput,
-    TransactionDocument,
 } from "../types/transaction.types";
 
 function normalizeNullableString(value: string | null | undefined): string | null {
@@ -66,12 +72,109 @@ async function findTransactionById(
     }).lean<TransactionDocument | null>();
 }
 
+async function getDebtIfProvided(
+    workspaceId: Types.ObjectId,
+    debtId: Types.ObjectId | null
+): Promise<DebtDocument | null> {
+    if (!debtId) {
+        return null;
+    }
+
+    const debt = await DebtModel.findOne({
+        _id: debtId,
+        workspaceId,
+    }).lean<DebtDocument | null>();
+
+    if (!debt) {
+        throw new TransactionServiceError(
+            "La deuda relacionada no fue encontrada en el workspace.",
+            400,
+            "TRANSACTION_DEBT_NOT_FOUND"
+        );
+    }
+
+    return debt;
+}
+
+function getDebtCashflowDirection(debt: DebtDocument): CashflowDirection {
+    return debt.type === "owed_by_me" ? "out" : "in";
+}
+
+function resolveCashflowDirection(args: {
+    type: TransactionType;
+    debt: DebtDocument | null;
+    requestedCashflowDirection: CashflowDirection | null | undefined;
+}): CashflowDirection | null {
+    const { type, debt, requestedCashflowDirection } = args;
+
+    if (type === "income") {
+        if (requestedCashflowDirection !== undefined && requestedCashflowDirection !== "in") {
+            throw new TransactionServiceError(
+                "Las transacciones de ingreso deben tener cashflowDirection igual a in.",
+                400,
+                "INVALID_INCOME_CASHFLOW_DIRECTION"
+            );
+        }
+
+        return "in";
+    }
+
+    if (type === "expense") {
+        if (requestedCashflowDirection !== undefined && requestedCashflowDirection !== "out") {
+            throw new TransactionServiceError(
+                "Las transacciones de gasto deben tener cashflowDirection igual a out.",
+                400,
+                "INVALID_EXPENSE_CASHFLOW_DIRECTION"
+            );
+        }
+
+        return "out";
+    }
+
+    if (type === "transfer") {
+        if (requestedCashflowDirection !== undefined && requestedCashflowDirection !== null) {
+            throw new TransactionServiceError(
+                "Las transferencias deben tener cashflowDirection nulo porque son neutrales para el neto.",
+                400,
+                "INVALID_TRANSFER_CASHFLOW_DIRECTION"
+            );
+        }
+
+        return null;
+    }
+
+    if (type === "debt_payment" && debt) {
+        const resolvedDirection = getDebtCashflowDirection(debt);
+
+        if (
+            requestedCashflowDirection !== undefined &&
+            requestedCashflowDirection !== null &&
+            requestedCashflowDirection !== resolvedDirection
+        ) {
+            throw new TransactionServiceError(
+                "El cashflowDirection no coincide con el tipo de deuda relacionada.",
+                400,
+                "DEBT_CASHFLOW_DIRECTION_MISMATCH"
+            );
+        }
+
+        return resolvedDirection;
+    }
+
+    if (type === "debt_payment") {
+        return requestedCashflowDirection ?? null;
+    }
+
+    return requestedCashflowDirection ?? null;
+}
+
 function validateBusinessRules(input: {
     accountId: Types.ObjectId | null;
     destinationAccountId: Types.ObjectId | null;
     cardId: Types.ObjectId | null;
+    debtId: Types.ObjectId | null;
     categoryId: Types.ObjectId | null;
-    type: "expense" | "income" | "debt_payment" | "transfer" | "adjustment";
+    type: TransactionType;
     isRecurring: boolean;
     recurrenceRule: string | null;
     amount: number;
@@ -81,6 +184,7 @@ function validateBusinessRules(input: {
         accountId,
         destinationAccountId,
         cardId,
+        debtId,
         categoryId,
         type,
         isRecurring,
@@ -118,6 +222,14 @@ function validateBusinessRules(input: {
             "La regla de recurrencia solo aplica cuando la transacción es recurrente.",
             400,
             "RECURRENCE_RULE_NOT_ALLOWED"
+        );
+    }
+
+    if (type !== "debt_payment" && debtId) {
+        throw new TransactionServiceError(
+            "debtId solo aplica a transacciones tipo debt_payment.",
+            400,
+            "TRANSACTION_DEBT_NOT_ALLOWED"
         );
     }
 
@@ -230,6 +342,7 @@ export async function createTransactionService(
     const accountId = parseOptionalObjectId(body.accountId);
     const destinationAccountId = parseOptionalObjectId(body.destinationAccountId);
     const cardId = parseOptionalObjectId(body.cardId);
+    const debtId = parseOptionalObjectId(body.debtId);
     const memberId = parseRequiredObjectId(body.memberId);
     const categoryId = parseOptionalObjectId(body.categoryId);
     const createdByUserId = parseRequiredObjectId(body.createdByUserId);
@@ -241,6 +354,7 @@ export async function createTransactionService(
         accountId,
         destinationAccountId,
         cardId,
+        debtId,
         categoryId,
         type: body.type,
         isRecurring,
@@ -249,14 +363,23 @@ export async function createTransactionService(
         transactionDate,
     });
 
+    const debt = await getDebtIfProvided(workspaceId, debtId);
+    const cashflowDirection = resolveCashflowDirection({
+        type: body.type,
+        debt,
+        requestedCashflowDirection: body.cashflowDirection,
+    });
+
     const transaction = await TransactionModel.create({
         workspaceId,
         accountId,
         destinationAccountId,
         cardId,
+        debtId,
         memberId,
         categoryId,
         type: body.type,
+        cashflowDirection,
         amount: body.amount,
         currency: body.currency,
         description: body.description.trim(),
@@ -279,9 +402,11 @@ export async function createTransactionService(
         accountId: transaction.accountId ?? null,
         destinationAccountId: transaction.destinationAccountId ?? null,
         cardId: transaction.cardId ?? null,
+        debtId: transaction.debtId ?? null,
         memberId: transaction.memberId,
         categoryId: transaction.categoryId ?? null,
         type: transaction.type,
+        cashflowDirection: transaction.cashflowDirection ?? null,
         amount: transaction.amount,
         currency: transaction.currency,
         description: transaction.description,
@@ -327,6 +452,11 @@ export async function updateTransactionService(
             ? parseOptionalObjectId(body.cardId)
             : existingTransaction.cardId ?? null;
 
+    const nextDebtId =
+        body.debtId !== undefined
+            ? parseOptionalObjectId(body.debtId)
+            : existingTransaction.debtId ?? null;
+
     const nextMemberId =
         body.memberId !== undefined
             ? parseRequiredObjectId(body.memberId)
@@ -353,12 +483,23 @@ export async function updateTransactionService(
         accountId: nextAccountId,
         destinationAccountId: nextDestinationAccountId,
         cardId: nextCardId,
+        debtId: nextDebtId,
         categoryId: nextCategoryId,
         type: nextType,
         isRecurring: nextIsRecurring,
         recurrenceRule: nextRecurrenceRule,
         amount: nextAmount,
         transactionDate: nextTransactionDate,
+    });
+
+    const nextDebt = await getDebtIfProvided(workspaceId, nextDebtId);
+    const nextCashflowDirection = resolveCashflowDirection({
+        type: nextType,
+        debt: nextDebt,
+        requestedCashflowDirection:
+            body.cashflowDirection !== undefined
+                ? body.cashflowDirection
+                : existingTransaction.cashflowDirection ?? undefined,
     });
 
     const updatedTransaction = await TransactionModel.findOneAndUpdate(
@@ -371,9 +512,11 @@ export async function updateTransactionService(
                 accountId: nextAccountId,
                 destinationAccountId: nextDestinationAccountId,
                 cardId: nextCardId,
+                debtId: nextDebtId,
                 memberId: nextMemberId,
                 categoryId: nextCategoryId,
                 type: nextType,
+                cashflowDirection: nextCashflowDirection,
                 amount: nextAmount,
                 currency: body.currency ?? existingTransaction.currency,
                 description:

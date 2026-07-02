@@ -8,7 +8,7 @@ import { CategoryModel } from "@/src/categories/models/Category.model";
 import { DebtModel } from "@/src/debts/models/Debt.model";
 import { deleteFromCloudinary } from "@/src/middlewares/cloudinaryUploads";
 import { PaymentModel } from "@/src/payments/models/Payment.model";
-import type { CurrencyCode } from "@/src/shared/types/common";
+import type { CashflowDirection, CurrencyCode } from "@/src/shared/types/common";
 import { TransactionModel } from "@/src/transactions/models/Transaction.model";
 import { WorkspaceMemberModel } from "@/src/workspaces/models/WorkspaceMember.model";
 import { ReportModel } from "../models/Report.model";
@@ -19,6 +19,7 @@ import type {
     CategoryBreakdownItem,
     CategoryBreakdownReport,
     CategoryBreakdownSeriesItem,
+    CategoryBreakdownType,
     CreateReportServiceInput,
     DebtSummaryReport,
     DebtSummarySeriesItem,
@@ -47,6 +48,7 @@ interface NormalizedAnalyticsFilters {
     cardId: OptionalObjectId;
     includeArchived: boolean;
     groupBy: ReportGroupBy;
+    type: CategoryBreakdownType;
 }
 
 interface BaseTransactionMatch {
@@ -66,10 +68,24 @@ interface BaseTransactionMatch {
     type?: string | { $in: string[] };
 }
 
+interface BasePaymentMatch {
+    workspaceId: Types.ObjectId;
+    status: "completed";
+    currency?: CurrencyCode;
+    memberId?: Types.ObjectId;
+    accountId?: Types.ObjectId;
+    cardId?: Types.ObjectId;
+    paymentDate?: {
+        $gte?: Date;
+        $lte?: Date;
+    };
+}
+
 interface TransactionAnalyticsItem {
     _id: Types.ObjectId;
     type: "income" | "expense" | "transfer" | "debt_payment" | "adjustment";
     amount: number;
+    cashflowDirection?: CashflowDirection | null;
     categoryId?: Types.ObjectId | null;
     memberId?: Types.ObjectId | null;
     transactionDate: Date;
@@ -78,6 +94,9 @@ interface TransactionAnalyticsItem {
 interface PaymentAnalyticsItem {
     _id: Types.ObjectId;
     amount: number;
+    principalAmount?: number | null;
+    feeAmount?: number | null;
+    cashflowDirection?: CashflowDirection | null;
     paymentDate: Date;
 }
 
@@ -311,6 +330,7 @@ function normalizeAnalyticsQuery(
         cardId: parseOptionalObjectId(query?.cardId),
         includeArchived: query?.includeArchived ?? false,
         groupBy: query?.groupBy ?? "day",
+        type: query?.type ?? "expense",
     };
 }
 
@@ -361,6 +381,72 @@ function buildBaseTransactionMatch(
     }
 
     return matchStage;
+}
+
+function buildBasePaymentMatch(
+    workspaceId: Types.ObjectId,
+    filters: NormalizedAnalyticsFilters
+): BasePaymentMatch {
+    const matchStage: BasePaymentMatch = {
+        workspaceId,
+        status: "completed",
+    };
+
+    if (filters.currency) {
+        matchStage.currency = filters.currency;
+    }
+
+    if (filters.memberId) {
+        matchStage.memberId = filters.memberId;
+    }
+
+    if (filters.accountId) {
+        matchStage.accountId = filters.accountId;
+    }
+
+    if (filters.cardId) {
+        matchStage.cardId = filters.cardId;
+    }
+
+    if (filters.dateFrom || filters.dateTo) {
+        matchStage.paymentDate = {};
+
+        if (filters.dateFrom) {
+            matchStage.paymentDate.$gte = filters.dateFrom;
+        }
+
+        if (filters.dateTo) {
+            matchStage.paymentDate.$lte = filters.dateTo;
+        }
+    }
+
+    return matchStage;
+}
+
+function getTransactionAmountForNetBalance(transaction: TransactionAnalyticsItem): number {
+    if (transaction.type === "adjustment" && transaction.cashflowDirection === "out") {
+        return -transaction.amount;
+    }
+
+    return transaction.amount;
+}
+
+function isDebtCollectionCashflow(
+    cashflowDirection: CashflowDirection | null | undefined
+): boolean {
+    return cashflowDirection === "in";
+}
+
+function getPaymentPrincipalAmount(payment: PaymentAnalyticsItem): number {
+    return payment.principalAmount ?? payment.amount;
+}
+
+function getPaymentFeeAmount(payment: PaymentAnalyticsItem): number {
+    return payment.feeAmount ?? 0;
+}
+
+function isPaymentCollection(payment: PaymentAnalyticsItem): boolean {
+    return payment.cashflowDirection === "in";
 }
 
 function padNumber(value: number): string {
@@ -447,6 +533,12 @@ async function getCategoryNamesMap(
 
 function sortSeriesByLabel<T extends { label: string }>(series: T[]): T[] {
     return [...series].sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function resolveCategoryBreakdownType(
+    requestedType: CategoryBreakdownType | null | undefined
+): CategoryBreakdownType {
+    return requestedType ?? "expense";
 }
 
 export async function getReportsService(
@@ -682,15 +774,22 @@ export async function getMonthlySummaryReportService(
 ): Promise<MonthlySummaryReport> {
     const filters = normalizeAnalyticsQuery(query);
     const baseMatch = buildBaseTransactionMatch(workspaceId, filters);
+    const paymentMatch = buildBasePaymentMatch(workspaceId, filters);
 
     const transactions = await TransactionModel.find(baseMatch)
-        .select("_id type amount categoryId memberId transactionDate")
+        .select("_id type amount cashflowDirection categoryId memberId transactionDate")
         .lean<TransactionAnalyticsItem[]>();
+
+    const completedDebtPayments = await PaymentModel.find(paymentMatch)
+        .select("_id amount principalAmount feeAmount cashflowDirection paymentDate")
+        .lean<PaymentAnalyticsItem[]>();
 
     const totals = {
         income: 0,
         expenses: 0,
         debtPayments: 0,
+        debtCollections: 0,
+        debtFees: 0,
         transfers: 0,
         adjustments: 0,
     };
@@ -699,6 +798,7 @@ export async function getMonthlySummaryReportService(
         income: 0,
         expenses: 0,
         debtPayments: 0,
+        debtCollections: 0,
         transfers: 0,
         adjustments: 0,
     };
@@ -733,14 +833,25 @@ export async function getMonthlySummaryReportService(
                 });
             }
         } else if (transaction.type === "debt_payment") {
-            totals.debtPayments += transaction.amount;
-            counts.debtPayments += 1;
+            if (isDebtCollectionCashflow(transaction.cashflowDirection)) {
+                totals.debtCollections += transaction.amount;
+                counts.debtCollections += 1;
+            } else {
+                totals.debtPayments += transaction.amount;
+                counts.debtPayments += 1;
+            }
         } else if (transaction.type === "transfer") {
             totals.transfers += transaction.amount;
             counts.transfers += 1;
         } else if (transaction.type === "adjustment") {
-            totals.adjustments += transaction.amount;
+            totals.adjustments += getTransactionAmountForNetBalance(transaction);
             counts.adjustments += 1;
+        }
+    }
+
+    for (const payment of completedDebtPayments) {
+        if (!isPaymentCollection(payment)) {
+            totals.debtFees += getPaymentFeeAmount(payment);
         }
     }
 
@@ -775,6 +886,8 @@ export async function getMonthlySummaryReportService(
                 income: 0,
                 expenses: 0,
                 debtPayments: 0,
+                debtCollections: 0,
+                debtFees: 0,
                 transfers: 0,
                 adjustments: 0,
                 netBalance: 0,
@@ -786,20 +899,48 @@ export async function getMonthlySummaryReportService(
             } else if (transaction.type === "expense") {
                 currentSeries.expenses += transaction.amount;
             } else if (transaction.type === "debt_payment") {
-                currentSeries.debtPayments += transaction.amount;
+                if (isDebtCollectionCashflow(transaction.cashflowDirection)) {
+                    currentSeries.debtCollections += transaction.amount;
+                } else {
+                    currentSeries.debtPayments += transaction.amount;
+                }
             } else if (transaction.type === "transfer") {
                 currentSeries.transfers += transaction.amount;
             } else if (transaction.type === "adjustment") {
-                currentSeries.adjustments += transaction.amount;
+                currentSeries.adjustments += getTransactionAmountForNetBalance(transaction);
             }
 
             currentSeries.transactionCount += 1;
             currentSeries.netBalance =
-                currentSeries.income -
+                currentSeries.income +
+                currentSeries.debtCollections -
                 currentSeries.expenses -
                 currentSeries.debtPayments +
                 currentSeries.adjustments;
 
+            seriesMap.set(label, currentSeries);
+        }
+
+        for (const payment of completedDebtPayments) {
+            if (isPaymentCollection(payment)) {
+                continue;
+            }
+
+            const label = formatBucketLabel(payment.paymentDate, filters.groupBy);
+            const currentSeries = seriesMap.get(label) ?? {
+                label,
+                income: 0,
+                expenses: 0,
+                debtPayments: 0,
+                debtCollections: 0,
+                debtFees: 0,
+                transfers: 0,
+                adjustments: 0,
+                netBalance: 0,
+                transactionCount: 0,
+            };
+
+            currentSeries.debtFees += getPaymentFeeAmount(payment);
             seriesMap.set(label, currentSeries);
         }
     }
@@ -810,22 +951,30 @@ export async function getMonthlySummaryReportService(
             income: roundToTwoDecimals(totals.income),
             expenses: roundToTwoDecimals(totals.expenses),
             debtPayments: roundToTwoDecimals(totals.debtPayments),
+            debtCollections: roundToTwoDecimals(totals.debtCollections),
+            debtFees: roundToTwoDecimals(totals.debtFees),
             transfers: roundToTwoDecimals(totals.transfers),
             adjustments: roundToTwoDecimals(totals.adjustments),
             netBalance: roundToTwoDecimals(
-                totals.income - totals.expenses - totals.debtPayments + totals.adjustments
+                totals.income +
+                totals.debtCollections -
+                totals.expenses -
+                totals.debtPayments +
+                totals.adjustments
             ),
         },
         counts: {
             income: counts.income,
             expenses: counts.expenses,
             debtPayments: counts.debtPayments,
+            debtCollections: counts.debtCollections,
             transfers: counts.transfers,
             adjustments: counts.adjustments,
             total:
                 counts.income +
                 counts.expenses +
                 counts.debtPayments +
+                counts.debtCollections +
                 counts.transfers +
                 counts.adjustments,
         },
@@ -836,6 +985,8 @@ export async function getMonthlySummaryReportService(
                 income: roundToTwoDecimals(item.income),
                 expenses: roundToTwoDecimals(item.expenses),
                 debtPayments: roundToTwoDecimals(item.debtPayments),
+                debtCollections: roundToTwoDecimals(item.debtCollections),
+                debtFees: roundToTwoDecimals(item.debtFees),
                 transfers: roundToTwoDecimals(item.transfers),
                 adjustments: roundToTwoDecimals(item.adjustments),
                 netBalance: roundToTwoDecimals(item.netBalance),
@@ -849,12 +1000,15 @@ export async function getCategoryBreakdownReportService(
     query: ReportAnalyticsQuery
 ): Promise<CategoryBreakdownReport> {
     const filters = normalizeAnalyticsQuery(query);
+    const breakdownType = resolveCategoryBreakdownType(filters.type);
     const baseMatch = buildBaseTransactionMatch(workspaceId, filters);
+    const transactionTypes =
+        breakdownType === "all" ? ["expense", "income", "adjustment"] : [breakdownType];
 
     const transactions = await TransactionModel.find({
         ...baseMatch,
         type: {
-            $in: ["expense", "income", "adjustment"],
+            $in: transactionTypes,
         },
     })
         .select("_id amount categoryId transactionDate")
@@ -938,6 +1092,7 @@ export async function getCategoryBreakdownReportService(
 
     return {
         filters: query,
+        type: breakdownType,
         totalAmount,
         totalTransactions,
         categories,
@@ -956,8 +1111,22 @@ export async function getDebtSummaryReportService(
     query: ReportAnalyticsQuery
 ): Promise<DebtSummaryReport> {
     const filters = normalizeAnalyticsQuery(query);
+    const snapshotAsOf = filters.dateTo ?? new Date();
 
-    const debtMatch: {
+    const currentDebtMatch: {
+        workspaceId: Types.ObjectId;
+        currency?: CurrencyCode;
+        memberId?: Types.ObjectId;
+        relatedAccountId?: Types.ObjectId;
+        status: { $in: Array<"active" | "overdue"> };
+        startDate: { $lte: Date };
+    } = {
+        workspaceId,
+        status: { $in: ["active", "overdue"] },
+        startDate: { $lte: snapshotAsOf },
+    };
+
+    const createdDebtMatch: {
         workspaceId: Types.ObjectId;
         currency?: CurrencyCode;
         memberId?: Types.ObjectId;
@@ -971,112 +1140,126 @@ export async function getDebtSummaryReportService(
     };
 
     if (filters.currency) {
-        debtMatch.currency = filters.currency;
+        currentDebtMatch.currency = filters.currency;
+        createdDebtMatch.currency = filters.currency;
     }
 
     if (filters.memberId) {
-        debtMatch.memberId = filters.memberId;
+        currentDebtMatch.memberId = filters.memberId;
+        createdDebtMatch.memberId = filters.memberId;
     }
 
     if (filters.accountId) {
-        debtMatch.relatedAccountId = filters.accountId;
+        currentDebtMatch.relatedAccountId = filters.accountId;
+        createdDebtMatch.relatedAccountId = filters.accountId;
     }
 
     if (filters.dateFrom || filters.dateTo) {
-        debtMatch.startDate = {};
+        createdDebtMatch.startDate = {};
 
         if (filters.dateFrom) {
-            debtMatch.startDate.$gte = filters.dateFrom;
+            createdDebtMatch.startDate.$gte = filters.dateFrom;
         }
 
         if (filters.dateTo) {
-            debtMatch.startDate.$lte = filters.dateTo;
+            createdDebtMatch.startDate.$lte = filters.dateTo;
         }
     }
 
-    const debts = await DebtModel.find(debtMatch)
+    const currentDebts = await DebtModel.find(currentDebtMatch)
         .select("_id type originalAmount remainingAmount status startDate")
         .lean<DebtAnalyticsItem[]>();
 
-    const paymentMatch: {
-        workspaceId: Types.ObjectId;
-        status: "completed";
-        currency?: CurrencyCode;
-        memberId?: Types.ObjectId;
-        accountId?: Types.ObjectId;
-        cardId?: Types.ObjectId;
-        paymentDate?: {
-            $gte?: Date;
-            $lte?: Date;
-        };
-    } = {
-        workspaceId,
-        status: "completed",
-    };
+    const createdDebts = await DebtModel.find(createdDebtMatch)
+        .select("_id type originalAmount remainingAmount status startDate")
+        .lean<DebtAnalyticsItem[]>();
 
-    if (filters.currency) {
-        paymentMatch.currency = filters.currency;
-    }
-
-    if (filters.memberId) {
-        paymentMatch.memberId = filters.memberId;
-    }
-
-    if (filters.accountId) {
-        paymentMatch.accountId = filters.accountId;
-    }
-
-    if (filters.cardId) {
-        paymentMatch.cardId = filters.cardId;
-    }
-
-    if (filters.dateFrom || filters.dateTo) {
-        paymentMatch.paymentDate = {};
-
-        if (filters.dateFrom) {
-            paymentMatch.paymentDate.$gte = filters.dateFrom;
-        }
-
-        if (filters.dateTo) {
-            paymentMatch.paymentDate.$lte = filters.dateTo;
-        }
-    }
+    const paymentMatch = buildBasePaymentMatch(workspaceId, filters);
 
     const payments = await PaymentModel.find(paymentMatch)
-        .select("_id amount paymentDate")
+        .select("_id amount principalAmount feeAmount cashflowDirection paymentDate")
         .lean<PaymentAnalyticsItem[]>();
 
     const counts = {
-        total: debts.length,
-        active: debts.filter((debt) => debt.status === "active").length,
-        paid: debts.filter((debt) => debt.status === "paid").length,
-        overdue: debts.filter((debt) => debt.status === "overdue").length,
-        cancelled: debts.filter((debt) => debt.status === "cancelled").length,
+        total: currentDebts.length,
+        active: currentDebts.filter((debt) => debt.status === "active").length,
+        paid: currentDebts.filter((debt) => debt.status === "paid").length,
+        overdue: currentDebts.filter((debt) => debt.status === "overdue").length,
+        cancelled: currentDebts.filter((debt) => debt.status === "cancelled").length,
     };
 
     const direction = {
-        owedByMeCount: debts.filter((debt) => debt.type === "owed_by_me").length,
-        owedToMeCount: debts.filter((debt) => debt.type === "owed_to_me").length,
+        owedByMeCount: currentDebts.filter((debt) => debt.type === "owed_by_me").length,
+        owedToMeCount: currentDebts.filter((debt) => debt.type === "owed_to_me").length,
         owedByMeOriginalAmount: roundToTwoDecimals(
-            debts
+            currentDebts
                 .filter((debt) => debt.type === "owed_by_me")
                 .reduce((sum, debt) => sum + debt.originalAmount, 0)
         ),
         owedToMeOriginalAmount: roundToTwoDecimals(
-            debts
+            currentDebts
                 .filter((debt) => debt.type === "owed_to_me")
                 .reduce((sum, debt) => sum + debt.originalAmount, 0)
         ),
         owedByMeRemainingAmount: roundToTwoDecimals(
-            debts
+            currentDebts
                 .filter((debt) => debt.type === "owed_by_me")
                 .reduce((sum, debt) => sum + debt.remainingAmount, 0)
         ),
         owedToMeRemainingAmount: roundToTwoDecimals(
-            debts
+            currentDebts
                 .filter((debt) => debt.type === "owed_to_me")
                 .reduce((sum, debt) => sum + debt.remainingAmount, 0)
         ),
+    };
+
+    const totalOriginalAmount = roundToTwoDecimals(
+        currentDebts.reduce((sum, debt) => sum + debt.originalAmount, 0)
+    );
+    const totalRemainingAmount = roundToTwoDecimals(
+        currentDebts.reduce((sum, debt) => sum + debt.remainingAmount, 0)
+    );
+
+    let debtPayments = 0;
+    let debtCollections = 0;
+    let principalPaid = 0;
+    let principalCollected = 0;
+    let debtFees = 0;
+    let completedPaymentsTotal = 0;
+
+    for (const payment of payments) {
+        const principalAmount = getPaymentPrincipalAmount(payment);
+        const feeAmount = getPaymentFeeAmount(payment);
+
+        completedPaymentsTotal += payment.amount;
+
+        if (isPaymentCollection(payment)) {
+            debtCollections += payment.amount;
+            principalCollected += principalAmount;
+        } else {
+            debtPayments += payment.amount;
+            principalPaid += principalAmount;
+            debtFees += feeAmount;
+        }
+    }
+
+    const periodActivity = {
+        paymentsCount: payments.length,
+        debtPayments: roundToTwoDecimals(debtPayments),
+        debtCollections: roundToTwoDecimals(debtCollections),
+        principalPaid: roundToTwoDecimals(principalPaid),
+        principalCollected: roundToTwoDecimals(principalCollected),
+        debtFees: roundToTwoDecimals(debtFees),
+        completedPaymentsTotal: roundToTwoDecimals(completedPaymentsTotal),
+        netCashflow: roundToTwoDecimals(debtCollections - debtPayments),
+    };
+
+    const currentOutstandingSnapshot = {
+        asOf: snapshotAsOf,
+        counts,
+        direction,
+        totalOriginalAmount,
+        totalRemainingAmount,
     };
 
     const seriesMap = new Map<
@@ -1085,16 +1268,22 @@ export async function getDebtSummaryReportService(
             label: string;
             createdDebtAmount: number;
             paidAmount: number;
+            collectedAmount: number;
+            feeAmount: number;
+            principalActivityAmount: number;
         }
     >();
 
     if (isTimeSeriesGroupBy(filters.groupBy)) {
-        for (const debt of debts) {
+        for (const debt of createdDebts) {
             const label = formatBucketLabel(debt.startDate, filters.groupBy);
             const currentValue = seriesMap.get(label) ?? {
                 label,
                 createdDebtAmount: 0,
                 paidAmount: 0,
+                collectedAmount: 0,
+                feeAmount: 0,
+                principalActivityAmount: 0,
             };
 
             currentValue.createdDebtAmount += debt.originalAmount;
@@ -1107,9 +1296,20 @@ export async function getDebtSummaryReportService(
                 label,
                 createdDebtAmount: 0,
                 paidAmount: 0,
+                collectedAmount: 0,
+                feeAmount: 0,
+                principalActivityAmount: 0,
             };
 
-            currentValue.paidAmount += payment.amount;
+            if (isPaymentCollection(payment)) {
+                currentValue.collectedAmount += payment.amount;
+                currentValue.principalActivityAmount += getPaymentPrincipalAmount(payment);
+            } else {
+                currentValue.paidAmount += payment.amount;
+                currentValue.feeAmount += getPaymentFeeAmount(payment);
+                currentValue.principalActivityAmount += getPaymentPrincipalAmount(payment);
+            }
+
             seriesMap.set(label, currentValue);
         }
     }
@@ -1119,12 +1319,14 @@ export async function getDebtSummaryReportService(
     let runningBalance = 0;
 
     const series: DebtSummarySeriesItem[] = sortedSeriesLabels.map((item) => {
-        runningBalance += item.createdDebtAmount - item.paidAmount;
+        runningBalance += item.createdDebtAmount - item.principalActivityAmount;
 
         return {
             label: item.label,
             createdDebtAmount: roundToTwoDecimals(item.createdDebtAmount),
             paidAmount: roundToTwoDecimals(item.paidAmount),
+            collectedAmount: roundToTwoDecimals(item.collectedAmount),
+            feeAmount: roundToTwoDecimals(item.feeAmount),
             remainingAmount: roundToTwoDecimals(Math.max(0, runningBalance)),
         };
     });
@@ -1133,15 +1335,11 @@ export async function getDebtSummaryReportService(
         filters: query,
         counts,
         direction,
-        totalOriginalAmount: roundToTwoDecimals(
-            debts.reduce((sum, debt) => sum + debt.originalAmount, 0)
-        ),
-        totalRemainingAmount: roundToTwoDecimals(
-            debts.reduce((sum, debt) => sum + debt.remainingAmount, 0)
-        ),
-        completedPaymentsTotal: roundToTwoDecimals(
-            payments.reduce((sum, payment) => sum + payment.amount, 0)
-        ),
+        totalOriginalAmount,
+        totalRemainingAmount,
+        completedPaymentsTotal: periodActivity.completedPaymentsTotal,
+        currentOutstandingSnapshot,
+        periodActivity,
         series,
     };
 }

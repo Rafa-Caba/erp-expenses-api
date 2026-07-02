@@ -1,11 +1,16 @@
 // src/reports/types/reports.types.ts
+// Shared report contracts for persisted reports and analytics responses.
+// Fase 3:
+// - Monthly summary separates debt payments vs debt collections.
+// - Debt summary separates current outstanding snapshot vs period activity.
+// - Category breakdown can be filtered by transaction type.
 
 import type { ParamsDictionary } from "express-serve-static-core";
 import type { Types } from "mongoose";
 
+import type { BudgetStatus } from "@/src/budgets/types/budgets.types";
 import type { CurrencyCode } from "@/src/shared/types/common";
 import type { WorkspaceDocument } from "@/src/workspaces/models/Workspace.model";
-import type { BudgetStatus } from "@/src/budgets/types/budgets.types";
 
 export const REPORT_TYPE_VALUES = [
     "monthly_summary",
@@ -36,6 +41,16 @@ export const REPORT_GROUP_BY_VALUES = [
 
 export type ReportGroupBy = (typeof REPORT_GROUP_BY_VALUES)[number];
 
+export const CATEGORY_BREAKDOWN_TYPE_VALUES = [
+    "expense",
+    "income",
+    "adjustment",
+    "all",
+] as const;
+
+export type CategoryBreakdownType =
+    (typeof CATEGORY_BREAKDOWN_TYPE_VALUES)[number];
+
 export const REPORT_FILE_RESOURCE_TYPE_VALUES = [
     "image",
     "video",
@@ -64,6 +79,7 @@ export interface ReportFilters {
     cardId?: string | null;
     includeArchived?: boolean | null;
     groupBy?: ReportGroupBy | null;
+    type?: CategoryBreakdownType | null;
 }
 
 export interface ReportDocument extends ReportStoredFileMetadata {
@@ -141,12 +157,15 @@ export interface ReportAnalyticsQuery {
     cardId?: string | null;
     includeArchived?: boolean | null;
     groupBy?: ReportGroupBy | null;
+    type?: CategoryBreakdownType | null;
 }
 
 export interface MonthlySummaryTotals {
     income: number;
     expenses: number;
     debtPayments: number;
+    debtCollections: number;
+    debtFees: number;
     transfers: number;
     adjustments: number;
     netBalance: number;
@@ -156,6 +175,7 @@ export interface MonthlySummaryCounts {
     income: number;
     expenses: number;
     debtPayments: number;
+    debtCollections: number;
     transfers: number;
     adjustments: number;
     total: number;
@@ -173,6 +193,8 @@ export interface MonthlySummarySeriesItem {
     income: number;
     expenses: number;
     debtPayments: number;
+    debtCollections: number;
+    debtFees: number;
     transfers: number;
     adjustments: number;
     netBalance: number;
@@ -203,6 +225,7 @@ export interface CategoryBreakdownSeriesItem {
 
 export interface CategoryBreakdownReport {
     filters: ReportAnalyticsQuery;
+    type: CategoryBreakdownType;
     totalAmount: number;
     totalTransactions: number;
     categories: CategoryBreakdownItem[];
@@ -226,10 +249,31 @@ export interface DebtSummaryDirection {
     owedToMeRemainingAmount: number;
 }
 
+export interface DebtSummaryCurrentOutstandingSnapshot {
+    asOf: Date;
+    counts: DebtSummaryCounts;
+    direction: DebtSummaryDirection;
+    totalOriginalAmount: number;
+    totalRemainingAmount: number;
+}
+
+export interface DebtSummaryPeriodActivity {
+    paymentsCount: number;
+    debtPayments: number;
+    debtCollections: number;
+    principalPaid: number;
+    principalCollected: number;
+    debtFees: number;
+    completedPaymentsTotal: number;
+    netCashflow: number;
+}
+
 export interface DebtSummarySeriesItem {
     label: string;
     createdDebtAmount: number;
     paidAmount: number;
+    collectedAmount: number;
+    feeAmount: number;
     remainingAmount: number;
 }
 
@@ -240,6 +284,8 @@ export interface DebtSummaryReport {
     totalOriginalAmount: number;
     totalRemainingAmount: number;
     completedPaymentsTotal: number;
+    currentOutstandingSnapshot: DebtSummaryCurrentOutstandingSnapshot;
+    periodActivity: DebtSummaryPeriodActivity;
     series: DebtSummarySeriesItem[];
 }
 

@@ -1,4 +1,4 @@
-// src/transactions/schemas/transactions.schemas.ts
+// src/transactions/schemas/transaction.schemas.ts
 
 import { z } from "zod";
 
@@ -11,8 +11,10 @@ const transactionTypeSchema = z.enum([
     "adjustment",
 ]);
 const transactionStatusSchema = z.enum(["pending", "posted", "cancelled"]);
+const cashflowDirectionSchema = z.enum(["in", "out"]);
 
 const nullableIdSchema = z.string().trim().min(1).nullable().optional();
+const nullableCashflowDirectionSchema = cashflowDirectionSchema.nullable().optional();
 
 function isValidDateString(value: string): boolean {
     const parsedDate = new Date(value);
@@ -24,9 +26,11 @@ const createTransactionBodySchema = z
         accountId: nullableIdSchema,
         destinationAccountId: nullableIdSchema,
         cardId: nullableIdSchema,
+        debtId: nullableIdSchema,
         memberId: z.string().trim().min(1, "El miembro es obligatorio."),
         categoryId: nullableIdSchema,
         type: transactionTypeSchema,
+        cashflowDirection: nullableCashflowDirectionSchema,
         amount: z.number().positive("El monto debe ser mayor a 0."),
         currency: currencySchema,
         description: z
@@ -75,6 +79,15 @@ const createTransactionBodySchema = z
         const hasDestinationAccount = Boolean(data.destinationAccountId);
         const hasCard = Boolean(data.cardId);
         const hasCategory = Boolean(data.categoryId);
+        const hasDebt = Boolean(data.debtId);
+
+        if (data.type !== "debt_payment" && hasDebt) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["debtId"],
+                message: "debtId solo aplica a transacciones tipo debt_payment.",
+            });
+        }
 
         if (data.type === "transfer") {
             if (!hasAccount) {
@@ -180,9 +193,11 @@ const updateTransactionBodySchema = z
         accountId: nullableIdSchema,
         destinationAccountId: nullableIdSchema,
         cardId: nullableIdSchema,
+        debtId: nullableIdSchema,
         memberId: z.string().trim().min(1).optional(),
         categoryId: nullableIdSchema,
         type: transactionTypeSchema.optional(),
+        cashflowDirection: nullableCashflowDirectionSchema,
         amount: z.number().positive("El monto debe ser mayor a 0.").optional(),
         currency: currencySchema.optional(),
         description: z
@@ -237,6 +252,15 @@ const updateTransactionBodySchema = z
                 : undefined;
         const hasCard = data.cardId !== undefined ? Boolean(data.cardId) : undefined;
         const hasCategory = data.categoryId !== undefined ? Boolean(data.categoryId) : undefined;
+        const hasDebt = data.debtId !== undefined ? Boolean(data.debtId) : undefined;
+
+        if (hasType && data.type !== "debt_payment" && hasDebt === true) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["debtId"],
+                message: "debtId solo aplica a transacciones tipo debt_payment.",
+            });
+        }
 
         if (hasType && data.type === "transfer") {
             if (hasAccount === false) {

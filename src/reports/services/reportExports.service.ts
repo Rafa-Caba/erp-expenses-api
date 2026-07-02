@@ -209,6 +209,16 @@ function buildMonthlySummaryExportRows(summary: MonthlySummaryReport): {
         },
         {
             section: "totals",
+            label: "debtCollections",
+            value: summary.totals.debtCollections,
+        },
+        {
+            section: "totals",
+            label: "debtFees",
+            value: summary.totals.debtFees,
+        },
+        {
+            section: "totals",
             label: "transfers",
             value: summary.totals.transfers,
         },
@@ -239,6 +249,11 @@ function buildMonthlySummaryExportRows(summary: MonthlySummaryReport): {
         },
         {
             section: "counts",
+            label: "debtCollections",
+            value: summary.counts.debtCollections,
+        },
+        {
+            section: "counts",
             label: "transfers",
             value: summary.counts.transfers,
         },
@@ -265,6 +280,8 @@ function buildMonthlySummaryExportRows(summary: MonthlySummaryReport): {
             income: item.income,
             expenses: item.expenses,
             debtPayments: item.debtPayments,
+            debtCollections: item.debtCollections,
+            debtFees: item.debtFees,
             transfers: item.transfers,
             adjustments: item.adjustments,
             netBalance: item.netBalance,
@@ -283,6 +300,8 @@ function buildMonthlySummaryExportRows(summary: MonthlySummaryReport): {
             "income",
             "expenses",
             "debtPayments",
+            "debtCollections",
+            "debtFees",
             "transfers",
             "adjustments",
             "netBalance",
@@ -296,6 +315,11 @@ function buildCategoryBreakdownExportRows(breakdown: CategoryBreakdownReport): {
     rows: ExportRows;
 } {
     const rows: ExportRows = [
+        {
+            section: "summary",
+            label: "type",
+            value: breakdown.type,
+        },
         {
             section: "summary",
             label: "totalAmount",
@@ -341,6 +365,11 @@ function buildDebtSummaryExportRows(summary: DebtSummaryReport): {
     rows: ExportRows;
 } {
     const rows: ExportRows = [
+        {
+            section: "currentOutstandingSnapshot",
+            label: "asOf",
+            value: summary.currentOutstandingSnapshot.asOf.toISOString(),
+        },
         {
             section: "counts",
             label: "total",
@@ -407,15 +436,52 @@ function buildDebtSummaryExportRows(summary: DebtSummaryReport): {
             value: summary.totalRemainingAmount,
         },
         {
-            section: "totals",
+            section: "periodActivity",
+            label: "paymentsCount",
+            value: summary.periodActivity.paymentsCount,
+        },
+        {
+            section: "periodActivity",
+            label: "debtPayments",
+            value: summary.periodActivity.debtPayments,
+        },
+        {
+            section: "periodActivity",
+            label: "debtCollections",
+            value: summary.periodActivity.debtCollections,
+        },
+        {
+            section: "periodActivity",
+            label: "principalPaid",
+            value: summary.periodActivity.principalPaid,
+        },
+        {
+            section: "periodActivity",
+            label: "principalCollected",
+            value: summary.periodActivity.principalCollected,
+        },
+        {
+            section: "periodActivity",
+            label: "debtFees",
+            value: summary.periodActivity.debtFees,
+        },
+        {
+            section: "periodActivity",
             label: "completedPaymentsTotal",
-            value: summary.completedPaymentsTotal,
+            value: summary.periodActivity.completedPaymentsTotal,
+        },
+        {
+            section: "periodActivity",
+            label: "netCashflow",
+            value: summary.periodActivity.netCashflow,
         },
         ...summary.series.map((item) => ({
             section: "series",
             label: item.label,
             createdDebtAmount: item.createdDebtAmount,
             paidAmount: item.paidAmount,
+            collectedAmount: item.collectedAmount,
+            feeAmount: item.feeAmount,
             remainingAmount: item.remainingAmount,
         })),
     ];
@@ -427,6 +493,8 @@ function buildDebtSummaryExportRows(summary: DebtSummaryReport): {
             "value",
             "createdDebtAmount",
             "paidAmount",
+            "collectedAmount",
+            "feeAmount",
             "remainingAmount",
         ],
         rows,

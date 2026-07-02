@@ -1,9 +1,13 @@
-// src/transactions/types/transactions.types.ts
+// src/transactions/types/transaction.types.ts
 
 import type { ParamsDictionary } from "express-serve-static-core";
 import type { Types } from "mongoose";
 
-import type { CurrencyCode, TransactionType } from "@/src/shared/types/common";
+import type {
+    CashflowDirection,
+    CurrencyCode,
+    TransactionType,
+} from "@/src/shared/types/common";
 import type { WorkspaceDocument } from "@/src/workspaces/models/Workspace.model";
 
 export const TRANSACTION_STATUS_VALUES = ["pending", "posted", "cancelled"] as const;
@@ -26,9 +30,11 @@ export interface TransactionDocument {
     accountId?: Types.ObjectId | null;
     destinationAccountId?: Types.ObjectId | null;
     cardId?: Types.ObjectId | null;
+    debtId?: Types.ObjectId | null;
     memberId: Types.ObjectId;
     categoryId?: Types.ObjectId | null;
     type: TransactionType;
+    cashflowDirection?: CashflowDirection | null;
     amount: number;
     currency: CurrencyCode;
     description: string;
@@ -60,9 +66,11 @@ export interface CreateTransactionBody {
     accountId?: string | null;
     destinationAccountId?: string | null;
     cardId?: string | null;
+    debtId?: string | null;
     memberId: string;
     categoryId?: string | null;
     type: TransactionType;
+    cashflowDirection?: CashflowDirection | null;
     amount: number;
     currency: CurrencyCode;
     description: string;
@@ -81,9 +89,11 @@ export interface UpdateTransactionBody {
     accountId?: string | null;
     destinationAccountId?: string | null;
     cardId?: string | null;
+    debtId?: string | null;
     memberId?: string;
     categoryId?: string | null;
     type?: TransactionType;
+    cashflowDirection?: CashflowDirection | null;
     amount?: number;
     currency?: CurrencyCode;
     description?: string;

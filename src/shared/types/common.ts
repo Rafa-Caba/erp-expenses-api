@@ -22,3 +22,4 @@ export type TransactionType =
   | "adjustment";
 
 export type TransactionDirection = "in" | "out";
+export type CashflowDirection = TransactionDirection;
