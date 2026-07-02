@@ -1,3 +1,8 @@
+// src/debts/types/debts.types.ts
+// Debt domain types for API contracts and service inputs.
+// Phase 8 adds optional payment plan/installment fields for debts that are
+// paid or collected in scheduled installments.
+
 import type { ParamsDictionary } from "express-serve-static-core";
 import type { Types } from "mongoose";
 
@@ -15,6 +20,15 @@ export const DEBT_STATUS_VALUES = [
 ] as const;
 export type DebtStatus = (typeof DEBT_STATUS_VALUES)[number];
 
+export const DEBT_INSTALLMENT_FREQUENCY_VALUES = [
+    "weekly",
+    "biweekly",
+    "monthly",
+    "yearly",
+] as const;
+export type DebtInstallmentFrequency =
+    (typeof DEBT_INSTALLMENT_FREQUENCY_VALUES)[number];
+
 export interface DebtDocument {
     _id: Types.ObjectId;
     workspaceId: Types.ObjectId;
@@ -30,6 +44,14 @@ export interface DebtDocument {
     startDate: Date;
     dueDate?: Date | null;
     status: DebtStatus;
+    paymentPlanEnabled?: boolean;
+    installmentAmount?: number | null;
+    installmentFrequency?: DebtInstallmentFrequency | null;
+    totalInstallments?: number | null;
+    paidInstallments?: number | null;
+    remainingInstallments?: number | null;
+    paymentDay?: number | null;
+    nextDueDate?: Date | null;
     notes?: string | null;
     isVisible?: boolean;
     createdAt: Date;
@@ -58,6 +80,13 @@ export interface CreateDebtBody {
     startDate: string;
     dueDate?: string | null;
     status?: DebtStatus;
+    paymentPlanEnabled?: boolean;
+    installmentAmount?: number | null;
+    installmentFrequency?: DebtInstallmentFrequency | null;
+    totalInstallments?: number | null;
+    paidInstallments?: number | null;
+    paymentDay?: number | null;
+    nextDueDate?: string | null;
     notes?: string | null;
     isVisible?: boolean;
 }
@@ -75,6 +104,13 @@ export interface UpdateDebtBody {
     startDate?: string;
     dueDate?: string | null;
     status?: DebtStatus;
+    paymentPlanEnabled?: boolean;
+    installmentAmount?: number | null;
+    installmentFrequency?: DebtInstallmentFrequency | null;
+    totalInstallments?: number | null;
+    paidInstallments?: number | null;
+    paymentDay?: number | null;
+    nextDueDate?: string | null;
     notes?: string | null;
     isVisible?: boolean;
 }

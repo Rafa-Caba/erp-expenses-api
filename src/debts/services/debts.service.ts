@@ -1,15 +1,31 @@
 // src/debts/services/debts.service.ts
+// Debt service layer. Phase 8 adds payment plan normalization and validation
+// for installment-based debts.
 
 import { Types } from "mongoose";
 
 import { DebtModel } from "../models/Debt.model";
 import type {
+    CreateDebtBody,
     CreateDebtServiceInput,
     DebtDocument,
+    DebtInstallmentFrequency,
     DebtStatus,
     DeleteDebtServiceInput,
+    UpdateDebtBody,
     UpdateDebtServiceInput,
 } from "../types/debts.types";
+
+type NormalizedPaymentPlanFields = {
+    paymentPlanEnabled: boolean;
+    installmentAmount: number | null;
+    installmentFrequency: DebtInstallmentFrequency | null;
+    totalInstallments: number | null;
+    paidInstallments: number | null;
+    remainingInstallments: number | null;
+    paymentDay: number | null;
+    nextDueDate: Date | null;
+};
 
 function normalizeNullableString(value: string | null | undefined): string | null {
     if (value === undefined || value === null) {
@@ -52,6 +68,10 @@ function isValidDate(value: Date): boolean {
 
 function getNow(): Date {
     return new Date();
+}
+
+function roundMoney(value: number): number {
+    return Number(value.toFixed(2));
 }
 
 function resolveDebtStatus(
@@ -134,6 +154,206 @@ function validateDates(startDate: Date, dueDate: Date | null): void {
     }
 }
 
+function normalizeOptionalPositiveNumber(value: number | null | undefined): number | null {
+    if (value === undefined || value === null) {
+        return null;
+    }
+
+    return roundMoney(value);
+}
+
+function normalizeOptionalInteger(value: number | null | undefined): number | null {
+    if (value === undefined || value === null) {
+        return null;
+    }
+
+    return Math.trunc(value);
+}
+
+function validatePaymentPlan(plan: NormalizedPaymentPlanFields): void {
+    if (!plan.paymentPlanEnabled) {
+        return;
+    }
+
+    if (plan.installmentAmount === null || plan.installmentAmount <= 0) {
+        throw new DebtServiceError(
+            "El monto por mensualidad debe ser mayor a 0 cuando el plan de pagos está activo.",
+            400,
+            "INVALID_INSTALLMENT_AMOUNT"
+        );
+    }
+
+    if (!plan.installmentFrequency) {
+        throw new DebtServiceError(
+            "La frecuencia es obligatoria cuando el plan de pagos está activo.",
+            400,
+            "INSTALLMENT_FREQUENCY_REQUIRED"
+        );
+    }
+
+    if (plan.totalInstallments === null || plan.totalInstallments <= 0) {
+        throw new DebtServiceError(
+            "El total de mensualidades debe ser mayor a 0 cuando el plan de pagos está activo.",
+            400,
+            "INVALID_TOTAL_INSTALLMENTS"
+        );
+    }
+
+    if (plan.paidInstallments === null || plan.paidInstallments < 0) {
+        throw new DebtServiceError(
+            "Las mensualidades pagadas no pueden ser menores a 0.",
+            400,
+            "INVALID_PAID_INSTALLMENTS"
+        );
+    }
+
+    if (plan.paidInstallments > plan.totalInstallments) {
+        throw new DebtServiceError(
+            "Las mensualidades pagadas no pueden exceder el total.",
+            400,
+            "PAID_INSTALLMENTS_EXCEED_TOTAL"
+        );
+    }
+
+    if (plan.paymentDay !== null && (plan.paymentDay < 1 || plan.paymentDay > 31)) {
+        throw new DebtServiceError(
+            "El día de pago debe estar entre 1 y 31.",
+            400,
+            "INVALID_PAYMENT_DAY"
+        );
+    }
+
+    if (plan.nextDueDate !== null && !isValidDate(plan.nextDueDate)) {
+        throw new DebtServiceError(
+            "La fecha del siguiente pago no es válida.",
+            400,
+            "INVALID_NEXT_DUE_DATE"
+        );
+    }
+}
+
+function buildDisabledPaymentPlan(): NormalizedPaymentPlanFields {
+    return {
+        paymentPlanEnabled: false,
+        installmentAmount: null,
+        installmentFrequency: null,
+        totalInstallments: null,
+        paidInstallments: null,
+        remainingInstallments: null,
+        paymentDay: null,
+        nextDueDate: null,
+    };
+}
+
+function buildPaymentPlanFromCreateBody(body: CreateDebtBody): NormalizedPaymentPlanFields {
+    const paymentPlanEnabled = body.paymentPlanEnabled ?? false;
+
+    if (!paymentPlanEnabled) {
+        return buildDisabledPaymentPlan();
+    }
+
+    const totalInstallments = normalizeOptionalInteger(body.totalInstallments);
+    const paidInstallments = normalizeOptionalInteger(body.paidInstallments) ?? 0;
+    const remainingInstallments =
+        totalInstallments !== null ? Math.max(0, totalInstallments - paidInstallments) : null;
+    const plan: NormalizedPaymentPlanFields = {
+        paymentPlanEnabled,
+        installmentAmount: normalizeOptionalPositiveNumber(body.installmentAmount),
+        installmentFrequency: body.installmentFrequency ?? null,
+        totalInstallments,
+        paidInstallments,
+        remainingInstallments,
+        paymentDay: normalizeOptionalInteger(body.paymentDay),
+        nextDueDate: parseOptionalDate(body.nextDueDate),
+    };
+
+    validatePaymentPlan(plan);
+
+    return plan;
+}
+
+function buildPaymentPlanFromUpdateBody(
+    body: UpdateDebtBody,
+    existingDebt: DebtDocument
+): NormalizedPaymentPlanFields {
+    const paymentPlanEnabled =
+        body.paymentPlanEnabled !== undefined
+            ? body.paymentPlanEnabled
+            : existingDebt.paymentPlanEnabled ?? false;
+
+    if (!paymentPlanEnabled) {
+        return buildDisabledPaymentPlan();
+    }
+
+    const totalInstallments =
+        body.totalInstallments !== undefined
+            ? normalizeOptionalInteger(body.totalInstallments)
+            : existingDebt.totalInstallments ?? null;
+    const paidInstallments =
+        body.paidInstallments !== undefined
+            ? normalizeOptionalInteger(body.paidInstallments) ?? 0
+            : existingDebt.paidInstallments ?? 0;
+    const remainingInstallments =
+        totalInstallments !== null ? Math.max(0, totalInstallments - paidInstallments) : null;
+    const plan: NormalizedPaymentPlanFields = {
+        paymentPlanEnabled,
+        installmentAmount:
+            body.installmentAmount !== undefined
+                ? normalizeOptionalPositiveNumber(body.installmentAmount)
+                : existingDebt.installmentAmount ?? null,
+        installmentFrequency:
+            body.installmentFrequency !== undefined
+                ? body.installmentFrequency
+                : existingDebt.installmentFrequency ?? null,
+        totalInstallments,
+        paidInstallments,
+        remainingInstallments,
+        paymentDay:
+            body.paymentDay !== undefined
+                ? normalizeOptionalInteger(body.paymentDay)
+                : existingDebt.paymentDay ?? null,
+        nextDueDate:
+            body.nextDueDate !== undefined
+                ? parseOptionalDate(body.nextDueDate)
+                : existingDebt.nextDueDate ?? null,
+    };
+
+    validatePaymentPlan(plan);
+
+    return plan;
+}
+
+function toDebtDocumentPayload(debt: DebtDocument): DebtDocument {
+    return {
+        _id: debt._id,
+        workspaceId: debt.workspaceId,
+        memberId: debt.memberId ?? null,
+        relatedAccountId: debt.relatedAccountId ?? null,
+        type: debt.type,
+        personName: debt.personName,
+        personContact: debt.personContact ?? null,
+        originalAmount: debt.originalAmount,
+        remainingAmount: debt.remainingAmount,
+        currency: debt.currency,
+        description: debt.description,
+        startDate: debt.startDate,
+        dueDate: debt.dueDate ?? null,
+        status: debt.status,
+        paymentPlanEnabled: debt.paymentPlanEnabled ?? false,
+        installmentAmount: debt.installmentAmount ?? null,
+        installmentFrequency: debt.installmentFrequency ?? null,
+        totalInstallments: debt.totalInstallments ?? null,
+        paidInstallments: debt.paidInstallments ?? null,
+        remainingInstallments: debt.remainingInstallments ?? null,
+        paymentDay: debt.paymentDay ?? null,
+        nextDueDate: debt.nextDueDate ?? null,
+        notes: debt.notes ?? null,
+        isVisible: debt.isVisible ?? true,
+        createdAt: debt.createdAt,
+        updatedAt: debt.updatedAt,
+    };
+}
+
 async function findDebtById(
     workspaceId: Types.ObjectId,
     debtId: Types.ObjectId
@@ -163,7 +383,7 @@ export function isDebtServiceError(error: Error): error is DebtServiceError {
 export async function getDebtsService(
     workspaceId: Types.ObjectId
 ): Promise<DebtDocument[]> {
-    return DebtModel.find({
+    const debts = await DebtModel.find({
         workspaceId,
     })
         .sort({
@@ -171,13 +391,17 @@ export async function getDebtsService(
             createdAt: -1,
         })
         .lean<DebtDocument[]>();
+
+    return debts.map(toDebtDocumentPayload);
 }
 
 export async function getDebtByIdService(
     workspaceId: Types.ObjectId,
     debtId: Types.ObjectId
 ): Promise<DebtDocument | null> {
-    return findDebtById(workspaceId, debtId);
+    const debt = await findDebtById(workspaceId, debtId);
+
+    return debt ? toDebtDocumentPayload(debt) : null;
 }
 
 export async function createDebtService(
@@ -189,6 +413,7 @@ export async function createDebtService(
     const relatedAccountId = parseOptionalObjectId(body.relatedAccountId);
     const startDate = parseRequiredDate(body.startDate);
     const dueDate = parseOptionalDate(body.dueDate);
+    const paymentPlan = buildPaymentPlanFromCreateBody(body);
 
     validateAmounts(body.originalAmount, body.remainingAmount);
     validateDates(startDate, dueDate);
@@ -213,11 +438,12 @@ export async function createDebtService(
         startDate,
         dueDate,
         status: resolvedStatus,
+        ...paymentPlan,
         notes: normalizeNullableString(body.notes),
         isVisible: body.isVisible ?? true,
     });
 
-    return {
+    return toDebtDocumentPayload({
         _id: debt._id,
         workspaceId: debt.workspaceId,
         memberId: debt.memberId ?? null,
@@ -232,11 +458,19 @@ export async function createDebtService(
         startDate: debt.startDate,
         dueDate: debt.dueDate ?? null,
         status: debt.status,
+        paymentPlanEnabled: debt.paymentPlanEnabled,
+        installmentAmount: debt.installmentAmount ?? null,
+        installmentFrequency: debt.installmentFrequency ?? null,
+        totalInstallments: debt.totalInstallments ?? null,
+        paidInstallments: debt.paidInstallments ?? null,
+        remainingInstallments: debt.remainingInstallments ?? null,
+        paymentDay: debt.paymentDay ?? null,
+        nextDueDate: debt.nextDueDate ?? null,
         notes: debt.notes ?? null,
         isVisible: debt.isVisible ?? true,
         createdAt: debt.createdAt,
         updatedAt: debt.updatedAt,
-    };
+    });
 }
 
 export async function updateDebtService(
@@ -269,6 +503,7 @@ export async function updateDebtService(
         body.dueDate !== undefined
             ? parseOptionalDate(body.dueDate)
             : existingDebt.dueDate ?? null;
+    const paymentPlan = buildPaymentPlanFromUpdateBody(body, existingDebt);
 
     validateAmounts(nextOriginalAmount, nextRemainingAmount);
     validateDates(nextStartDate, nextDueDate);
@@ -313,6 +548,7 @@ export async function updateDebtService(
                 startDate: nextStartDate,
                 dueDate: nextDueDate,
                 status: nextStatus,
+                ...paymentPlan,
                 notes:
                     body.notes !== undefined
                         ? normalizeNullableString(body.notes)
@@ -328,7 +564,7 @@ export async function updateDebtService(
         }
     ).lean<DebtDocument | null>();
 
-    return updatedDebt;
+    return updatedDebt ? toDebtDocumentPayload(updatedDebt) : null;
 }
 
 export async function deleteDebtService(
@@ -336,8 +572,10 @@ export async function deleteDebtService(
 ): Promise<DebtDocument | null> {
     const { workspaceId, debtId } = input;
 
-    return DebtModel.findOneAndDelete({
+    const debt = await DebtModel.findOneAndDelete({
         _id: debtId,
         workspaceId,
     }).lean<DebtDocument | null>();
+
+    return debt ? toDebtDocumentPayload(debt) : null;
 }

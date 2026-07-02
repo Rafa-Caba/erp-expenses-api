@@ -1,8 +1,16 @@
+// src/debts/models/Debt.model.ts
+// Mongo model for debts. Phase 8 adds optional payment plan fields so debts
+// can track installment counts, expected payment amount, and next due date.
+
 import { Schema, model, type Model } from "mongoose";
 
 import type { CurrencyCode } from "@/src/shared/types/common";
 import type { DebtDocument } from "../types/debts.types";
-import { DEBT_STATUS_VALUES, DEBT_TYPE_VALUES } from "../types/debts.types";
+import {
+    DEBT_INSTALLMENT_FREQUENCY_VALUES,
+    DEBT_STATUS_VALUES,
+    DEBT_TYPE_VALUES,
+} from "../types/debts.types";
 
 const currencyValues: CurrencyCode[] = ["MXN", "USD"];
 
@@ -79,6 +87,47 @@ const debtSchema = new Schema<DebtDocument>(
             trim: true,
             default: "active",
         },
+        paymentPlanEnabled: {
+            type: Boolean,
+            required: true,
+            default: false,
+        },
+        installmentAmount: {
+            type: Number,
+            min: 0,
+            default: null,
+        },
+        installmentFrequency: {
+            type: String,
+            enum: DEBT_INSTALLMENT_FREQUENCY_VALUES,
+            trim: true,
+            default: null,
+        },
+        totalInstallments: {
+            type: Number,
+            min: 1,
+            default: null,
+        },
+        paidInstallments: {
+            type: Number,
+            min: 0,
+            default: null,
+        },
+        remainingInstallments: {
+            type: Number,
+            min: 0,
+            default: null,
+        },
+        paymentDay: {
+            type: Number,
+            min: 1,
+            max: 31,
+            default: null,
+        },
+        nextDueDate: {
+            type: Date,
+            default: null,
+        },
         notes: {
             type: String,
             trim: true,
@@ -102,6 +151,7 @@ debtSchema.index({ workspaceId: 1, memberId: 1, status: 1 });
 debtSchema.index({ workspaceId: 1, relatedAccountId: 1, status: 1 });
 debtSchema.index({ workspaceId: 1, personName: 1 });
 debtSchema.index({ workspaceId: 1, isVisible: 1, createdAt: -1 });
+debtSchema.index({ workspaceId: 1, paymentPlanEnabled: 1, nextDueDate: 1 });
 
 export type DebtModelType = Model<DebtDocument>;
 
