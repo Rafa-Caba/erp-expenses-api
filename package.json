@@ -11,7 +11,9 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
     "start": "node -r module-alias/register dist/src/server.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "backfill:debt-cashflow": "tsx src/scripts/backfillDebtPaymentCashflow.ts",
+    "backfill:debt-cashflow:write": "tsx src/scripts/backfillDebtPaymentCashflow.ts --write"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
