@@ -270,17 +270,25 @@ function validateBusinessRules(input: {
     if (type === "debt_payment") {
         if (!accountId) {
             throw new TransactionServiceError(
-                "La cuenta es obligatoria para pagos de deuda.",
+                "La cuenta es obligatoria para pagos o cobros de deuda.",
                 400,
                 "DEBT_PAYMENT_ACCOUNT_REQUIRED"
             );
         }
 
-        if (!cardId) {
+        if (!debtId) {
             throw new TransactionServiceError(
-                "La tarjeta es obligatoria para pagos de deuda.",
+                "La deuda es obligatoria para pagos o cobros de deuda.",
                 400,
-                "DEBT_PAYMENT_CARD_REQUIRED"
+                "DEBT_PAYMENT_DEBT_REQUIRED"
+            );
+        }
+
+        if (destinationAccountId) {
+            throw new TransactionServiceError(
+                "destinationAccountId solo aplica a transacciones tipo transfer.",
+                400,
+                "DESTINATION_ACCOUNT_NOT_ALLOWED"
             );
         }
     }
