@@ -132,11 +132,19 @@ const createTransactionBodySchema = z
                 });
             }
 
-            if (!hasCard) {
+            if (!hasDebt) {
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
-                    path: ["cardId"],
-                    message: "cardId es obligatorio para transacciones tipo debt_payment.",
+                    path: ["debtId"],
+                    message: "debtId es obligatorio para transacciones tipo debt_payment.",
+                });
+            }
+
+            if (hasDestinationAccount) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ["destinationAccountId"],
+                    message: "destinationAccountId solo aplica a transacciones tipo transfer.",
                 });
             }
         }
@@ -311,11 +319,19 @@ const updateTransactionBodySchema = z
                 });
             }
 
-            if (hasCard === false) {
+            if (hasDebt === false) {
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
-                    path: ["cardId"],
-                    message: "cardId es obligatorio para transacciones tipo debt_payment.",
+                    path: ["debtId"],
+                    message: "debtId es obligatorio para transacciones tipo debt_payment.",
+                });
+            }
+
+            if (hasDestinationAccount === true) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ["destinationAccountId"],
+                    message: "destinationAccountId solo aplica a transacciones tipo transfer.",
                 });
             }
         }
