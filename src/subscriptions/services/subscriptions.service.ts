@@ -238,13 +238,13 @@ async function validateCategory(
     const category = await CategoryModel.exists({
         _id: categoryId,
         workspaceId,
-        type: "expense",
-        isArchived: { $ne: true },
+        type: { $in: ["EXPENSE", "BOTH"] },
+        isActive: true,
     });
 
     if (!category) {
         throw new SubscriptionServiceError(
-            "La categoría debe existir en el workspace y ser de tipo gasto.",
+            "La categoría debe existir en el workspace y ser de tipo gasto o ambos.",
             400,
             "SUBSCRIPTION_CATEGORY_NOT_FOUND"
         );
