@@ -15,7 +15,9 @@
     "backfill:debt-cashflow": "tsx src/scripts/backfillDebtPaymentCashflow.ts",
     "backfill:debt-cashflow:write": "tsx src/scripts/backfillDebtPaymentCashflow.ts --write",
     "subscriptions:process-due": "tsx src/scripts/processDueSubscriptions.ts",
-    "subscriptions:process-due:write": "tsx src/scripts/processDueSubscriptions.ts --write"
+    "subscriptions:process-due:write": "tsx src/scripts/processDueSubscriptions.ts --write",
+    "subscriptions:migrate-recurring-transactions": "tsx src/scripts/migrateRecurringTransactionsToSubscriptions.ts",
+    "subscriptions:migrate-recurring-transactions:write": "tsx src/scripts/migrateRecurringTransactionsToSubscriptions.ts --write"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

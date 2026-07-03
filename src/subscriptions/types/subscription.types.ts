@@ -59,6 +59,8 @@ export interface SubscriptionDocument {
     status: SubscriptionStatus;
     autoCreateTransaction: boolean;
     lastTransactionId?: Types.ObjectId | null;
+    legacyRecurringTransactionId?: Types.ObjectId | null;
+    migrationSource?: "recurring_transaction" | null;
     notes?: string | null;
     isVisible: boolean;
     createdAt: Date;

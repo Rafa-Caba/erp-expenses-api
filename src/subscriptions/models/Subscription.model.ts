@@ -104,6 +104,17 @@ const subscriptionSchema = new Schema<SubscriptionDocument>(
             ref: "Transaction",
             default: null,
         },
+        legacyRecurringTransactionId: {
+            type: Schema.Types.ObjectId,
+            ref: "Transaction",
+            default: null,
+        },
+        migrationSource: {
+            type: String,
+            enum: ["recurring_transaction"],
+            default: null,
+            trim: true,
+        },
         notes: {
             type: String,
             trim: true,
@@ -128,6 +139,16 @@ subscriptionSchema.index({ workspaceId: 1, categoryId: 1, status: 1 });
 subscriptionSchema.index({ workspaceId: 1, accountId: 1, status: 1 });
 subscriptionSchema.index({ workspaceId: 1, cardId: 1, status: 1 });
 subscriptionSchema.index({ workspaceId: 1, isVisible: 1, createdAt: -1 });
+subscriptionSchema.index(
+    { workspaceId: 1, legacyRecurringTransactionId: 1 },
+    {
+        unique: true,
+        sparse: true,
+        partialFilterExpression: {
+            legacyRecurringTransactionId: { $type: "objectId" },
+        },
+    }
+);
 
 export type SubscriptionModelType = Model<SubscriptionDocument>;
 
