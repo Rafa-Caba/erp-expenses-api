@@ -1,6 +1,5 @@
 // src/debts/models/Debt.model.ts
-// Mongo model for debts. Phase 8 adds optional payment plan fields so debts
-// can track installment counts, expected payment amount, and next due date.
+// Mongo model for debts. Phase 10 adds payment plan automation fields.
 
 import { Schema, model, type Model } from "mongoose";
 
@@ -49,7 +48,6 @@ const debtSchema = new Schema<DebtDocument>(
             maxlength: 255,
             default: null,
         },
-
         originalAmount: {
             type: Number,
             required: true,
@@ -97,6 +95,16 @@ const debtSchema = new Schema<DebtDocument>(
             min: 0,
             default: null,
         },
+        expectedPrincipalAmount: {
+            type: Number,
+            min: 0,
+            default: null,
+        },
+        expectedFeeAmount: {
+            type: Number,
+            min: 0,
+            default: null,
+        },
         installmentFrequency: {
             type: String,
             enum: DEBT_INSTALLMENT_FREQUENCY_VALUES,
@@ -128,6 +136,21 @@ const debtSchema = new Schema<DebtDocument>(
             type: Date,
             default: null,
         },
+        autoGeneratePayments: {
+            type: Boolean,
+            required: true,
+            default: false,
+        },
+        lastGeneratedPaymentId: {
+            type: Schema.Types.ObjectId,
+            ref: "Payment",
+            default: null,
+        },
+        lastGeneratedTransactionId: {
+            type: Schema.Types.ObjectId,
+            ref: "Transaction",
+            default: null,
+        },
         notes: {
             type: String,
             trim: true,
@@ -152,6 +175,7 @@ debtSchema.index({ workspaceId: 1, relatedAccountId: 1, status: 1 });
 debtSchema.index({ workspaceId: 1, personName: 1 });
 debtSchema.index({ workspaceId: 1, isVisible: 1, createdAt: -1 });
 debtSchema.index({ workspaceId: 1, paymentPlanEnabled: 1, nextDueDate: 1 });
+debtSchema.index({ workspaceId: 1, autoGeneratePayments: 1, nextDueDate: 1 });
 
 export type DebtModelType = Model<DebtDocument>;
 

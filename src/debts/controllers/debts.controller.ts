@@ -1,4 +1,5 @@
 // src/debts/controllers/debts.controller.ts
+// Debt controllers, including Phase 10 due debt payment processing.
 
 import type { RequestHandler } from "express";
 import { Types } from "mongoose";
@@ -12,9 +13,14 @@ import {
     DebtServiceError,
     updateDebtService,
 } from "../services/debts.service";
+import {
+    isDebtPaymentPlanProcessorError,
+    processDueDebtPaymentsService,
+} from "../services/debtPaymentPlanProcessor.service";
 import type {
     CreateDebtBody,
     DebtParams,
+    ProcessDueDebtPaymentsBody,
     UpdateDebtBody,
     WorkspaceDebtParams,
 } from "../types/debts.types";
@@ -29,6 +35,26 @@ function getObjectIdOrThrow(value: string): Types.ObjectId {
     }
 
     return new Types.ObjectId(value);
+}
+
+function handleDebtError(error: Error, res: Parameters<RequestHandler>[1]): boolean {
+    if (isDebtServiceError(error)) {
+        res.status(error.statusCode).json({
+            code: error.code,
+            message: error.message,
+        });
+        return true;
+    }
+
+    if (isDebtPaymentPlanProcessorError(error)) {
+        res.status(error.statusCode).json({
+            code: error.code,
+            message: error.message,
+        });
+        return true;
+    }
+
+    return false;
 }
 
 export const getDebtsController: RequestHandler<
@@ -51,11 +77,7 @@ export const getDebtsController: RequestHandler<
             debts,
         });
     } catch (error) {
-        if (error instanceof Error && isDebtServiceError(error)) {
-            res.status(error.statusCode).json({
-                code: error.code,
-                message: error.message,
-            });
+        if (error instanceof Error && handleDebtError(error, res)) {
             return;
         }
 
@@ -93,11 +115,7 @@ export const getDebtByIdController: RequestHandler<
             debt,
         });
     } catch (error) {
-        if (error instanceof Error && isDebtServiceError(error)) {
-            res.status(error.statusCode).json({
-                code: error.code,
-                message: error.message,
-            });
+        if (error instanceof Error && handleDebtError(error, res)) {
             return;
         }
 
@@ -132,11 +150,7 @@ export const createDebtController: RequestHandler<
             debt,
         });
     } catch (error) {
-        if (error instanceof Error && isDebtServiceError(error)) {
-            res.status(error.statusCode).json({
-                code: error.code,
-                message: error.message,
-            });
+        if (error instanceof Error && handleDebtError(error, res)) {
             return;
         }
 
@@ -181,11 +195,7 @@ export const updateDebtController: RequestHandler<
             debt,
         });
     } catch (error) {
-        if (error instanceof Error && isDebtServiceError(error)) {
-            res.status(error.statusCode).json({
-                code: error.code,
-                message: error.message,
-            });
+        if (error instanceof Error && handleDebtError(error, res)) {
             return;
         }
 
@@ -227,11 +237,45 @@ export const deleteDebtController: RequestHandler<
             debt,
         });
     } catch (error) {
-        if (error instanceof Error && isDebtServiceError(error)) {
-            res.status(error.statusCode).json({
-                code: error.code,
-                message: error.message,
+        if (error instanceof Error && handleDebtError(error, res)) {
+            return;
+        }
+
+        next(error);
+    }
+};
+
+export const processDueDebtPaymentsController: RequestHandler<
+    WorkspaceDebtParams,
+    object,
+    ProcessDueDebtPaymentsBody
+> = async (req, res, next): Promise<void> => {
+    try {
+        if (!req.workspace || !req.workspaceMember) {
+            res.status(404).json({
+                code: "WORKSPACE_NOT_FOUND",
+                message: "Workspace no encontrado.",
             });
+            return;
+        }
+
+        const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
+
+        const result = await processDueDebtPaymentsService({
+            workspaceId,
+            body: req.body,
+            workspace: req.workspace,
+            createdByUserId: req.workspaceMember._id,
+        });
+
+        res.status(200).json({
+            message: result.dryRun
+                ? "Simulación de pagos vencidos de deuda completada."
+                : "Pagos vencidos de deuda procesados correctamente.",
+            result,
+        });
+    } catch (error) {
+        if (error instanceof Error && handleDebtError(error, res)) {
             return;
         }
 

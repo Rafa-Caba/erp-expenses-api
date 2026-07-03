@@ -1,29 +1,33 @@
 // src/debts/routes/debts.routes.ts
+// Debt routes, including Phase 10 due payment processing.
 
 import { Router } from "express";
 
+import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
+import { requireWorkspacePermission } from "@/src/middlewares/requireWorkspacePermission";
+import { validateRequest } from "@/src/middlewares/validateRequest";
 import {
     createDebtController,
     deleteDebtController,
     getDebtByIdController,
     getDebtsController,
+    processDueDebtPaymentsController,
     updateDebtController,
 } from "../controllers/debts.controller";
 import {
     createDebtSchema,
     debtParamsSchema,
+    processDueDebtPaymentsSchema,
     updateDebtSchema,
     workspaceDebtParamsSchema,
 } from "../schemas/debt.schemas";
 import type {
     CreateDebtBody,
     DebtParams,
+    ProcessDueDebtPaymentsBody,
     UpdateDebtBody,
     WorkspaceDebtParams,
 } from "../types/debts.types";
-import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
-import { requireWorkspacePermission } from "@/src/middlewares/requireWorkspacePermission";
-import { validateRequest } from "@/src/middlewares/validateRequest";
 
 const debtRouter = Router({ mergeParams: true });
 
@@ -34,6 +38,16 @@ debtRouter.get<WorkspaceDebtParams>(
     validateRequest(workspaceDebtParamsSchema),
     requireWorkspacePermission("debts.read"),
     getDebtsController
+);
+
+debtRouter.post<WorkspaceDebtParams, object, ProcessDueDebtPaymentsBody>(
+    "/process-due-payments",
+    validateRequest(workspaceDebtParamsSchema),
+    validateRequest(processDueDebtPaymentsSchema),
+    requireWorkspacePermission("debts.update"),
+    requireWorkspacePermission("debts.pay"),
+    requireWorkspacePermission("transactions.create"),
+    processDueDebtPaymentsController
 );
 
 debtRouter.get<DebtParams>(

@@ -17,7 +17,11 @@
     "subscriptions:process-due": "tsx src/scripts/processDueSubscriptions.ts",
     "subscriptions:process-due:write": "tsx src/scripts/processDueSubscriptions.ts --write",
     "subscriptions:migrate-recurring-transactions": "tsx src/scripts/migrateRecurringTransactionsToSubscriptions.ts",
-    "subscriptions:migrate-recurring-transactions:write": "tsx src/scripts/migrateRecurringTransactionsToSubscriptions.ts --write"
+    "subscriptions:migrate-recurring-transactions:write": "tsx src/scripts/migrateRecurringTransactionsToSubscriptions.ts --write",
+    "debts:process-due-payments": "tsx src/scripts/processDueDebtPayments.ts",
+    "debts:process-due-payments:write": "tsx src/scripts/processDueDebtPayments.ts --write",
+    "debts:migrate-payment-plans": "tsx src/scripts/migrateDebtPaymentPlans.ts",
+    "debts:migrate-payment-plans:write": "tsx src/scripts/migrateDebtPaymentPlans.ts --write"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
