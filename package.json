@@ -13,7 +13,9 @@
     "start": "node -r module-alias/register dist/src/server.js",
     "lint": "eslint .",
     "backfill:debt-cashflow": "tsx src/scripts/backfillDebtPaymentCashflow.ts",
-    "backfill:debt-cashflow:write": "tsx src/scripts/backfillDebtPaymentCashflow.ts --write"
+    "backfill:debt-cashflow:write": "tsx src/scripts/backfillDebtPaymentCashflow.ts --write",
+    "subscriptions:process-due": "tsx src/scripts/processDueSubscriptions.ts",
+    "subscriptions:process-due:write": "tsx src/scripts/processDueSubscriptions.ts --write"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

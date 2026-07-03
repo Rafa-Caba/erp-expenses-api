@@ -2,12 +2,15 @@
 // Subscription service layer.
 // Phase 9A adds CRUD for recurring expenses and a reviewed action that creates
 // one expense transaction from a subscription.
+// Phase 9B adds the recurring engine: it can preview or generate due
+// transactions for active subscriptions marked with autoCreateTransaction.
 
 import { Types } from "mongoose";
 
 import { AccountModel } from "@/src/accounts/models/Account.model";
 import { CardModel } from "@/src/cards/models/Card.model";
 import { CategoryModel } from "@/src/categories/models/Category.model";
+import { TransactionModel } from "@/src/transactions/models/Transaction.model";
 import { createTransactionService } from "@/src/transactions/services/transactions.service";
 import type { TransactionDocument } from "@/src/transactions/types/transaction.types";
 import { WorkspaceMemberModel } from "@/src/workspaces/models/WorkspaceMember.model";
@@ -16,9 +19,12 @@ import type {
     CreateSubscriptionServiceInput,
     CreateSubscriptionTransactionServiceInput,
     DeleteSubscriptionServiceInput,
+    ProcessDueSubscriptionItem,
+    ProcessDueSubscriptionsResult,
+    ProcessDueSubscriptionsServiceInput,
     SubscriptionBillingFrequency,
     SubscriptionDocument,
-    SubscriptionStatus,
+    SubscriptionTransactionResult,
     UpdateSubscriptionServiceInput,
 } from "../types/subscription.types";
 
@@ -134,7 +140,15 @@ function addBillingFrequency(
     if (frequency === "yearly") {
         const nextYear = year + 1;
         const nextDay = clampDay(nextYear, monthIndex, day);
-        return new Date(nextYear, monthIndex, nextDay, base.getHours(), base.getMinutes(), base.getSeconds(), base.getMilliseconds());
+        return new Date(
+            nextYear,
+            monthIndex,
+            nextDay,
+            base.getHours(),
+            base.getMinutes(),
+            base.getSeconds(),
+            base.getMilliseconds()
+        );
     }
 
     const nextMonth = monthIndex + 1;
@@ -142,7 +156,15 @@ function addBillingFrequency(
     const normalizedNextMonth = nextMonth % 12;
     const nextDay = clampDay(nextYear, normalizedNextMonth, day);
 
-    return new Date(nextYear, normalizedNextMonth, nextDay, base.getHours(), base.getMinutes(), base.getSeconds(), base.getMilliseconds());
+    return new Date(
+        nextYear,
+        normalizedNextMonth,
+        nextDay,
+        base.getHours(),
+        base.getMinutes(),
+        base.getSeconds(),
+        base.getMilliseconds()
+    );
 }
 
 function validateDates(input: {
@@ -310,6 +332,118 @@ async function findSubscriptionById(
         _id: subscriptionId,
         workspaceId,
     }).lean<SubscriptionDocument | null>();
+}
+
+function toDateOnly(value: Date): string {
+    return value.toISOString().slice(0, 10);
+}
+
+function buildGeneratedTransactionReference(
+    subscriptionId: Types.ObjectId,
+    billingDate: Date
+): string {
+    return `subscription:${subscriptionId.toString()}:${toDateOnly(billingDate)}`;
+}
+
+function buildGeneratedTransactionNotes(subscription: SubscriptionDocument): string {
+    return `Generada desde suscripción: ${subscription.name}`;
+}
+
+async function findExistingGeneratedTransaction(args: {
+    workspaceId: Types.ObjectId;
+    subscriptionId: Types.ObjectId;
+    billingDate: Date;
+}): Promise<TransactionDocument | null> {
+    const reference = buildGeneratedTransactionReference(
+        args.subscriptionId,
+        args.billingDate
+    );
+
+    return TransactionModel.findOne({
+        workspaceId: args.workspaceId,
+        reference,
+        isArchived: { $ne: true },
+    }).lean<TransactionDocument | null>();
+}
+
+async function createGeneratedTransactionFromSubscription(args: {
+    workspaceId: Types.ObjectId;
+    workspace: CreateSubscriptionTransactionServiceInput["workspace"];
+    subscription: SubscriptionDocument;
+    billingDate: Date;
+    createdByUserId: Types.ObjectId;
+    status?: "pending" | "posted" | "cancelled";
+    reference?: string | null;
+    notes?: string | null;
+}): Promise<TransactionDocument> {
+    const reference =
+        normalizeNullableString(args.reference) ??
+        buildGeneratedTransactionReference(args.subscription._id, args.billingDate);
+    const notes = normalizeNullableString(args.notes) ?? buildGeneratedTransactionNotes(args.subscription);
+
+    return createTransactionService({
+        workspaceId: args.workspaceId,
+        workspace: args.workspace,
+        body: {
+            accountId: args.subscription.accountId?.toString() ?? null,
+            destinationAccountId: null,
+            cardId: args.subscription.cardId?.toString() ?? null,
+            debtId: null,
+            memberId: args.subscription.memberId.toString(),
+            categoryId: args.subscription.categoryId.toString(),
+            type: "expense",
+            cashflowDirection: "out",
+            amount: args.subscription.amount,
+            currency: args.subscription.currency,
+            description: `Suscripción: ${args.subscription.name}`,
+            merchant: args.subscription.merchant ?? args.subscription.name,
+            transactionDate: args.billingDate.toISOString(),
+            status: args.status ?? "posted",
+            reference,
+            notes,
+            isRecurring: false,
+            recurrenceRule: null,
+            isVisible: true,
+            createdByUserId: args.createdByUserId.toString(),
+        },
+    });
+}
+
+async function advanceSubscriptionAfterTransaction(args: {
+    workspaceId: Types.ObjectId;
+    subscription: SubscriptionDocument;
+    billingDate: Date;
+    transactionId: Types.ObjectId;
+}): Promise<SubscriptionDocument> {
+    const nextBillingDate = addBillingFrequency(
+        args.billingDate,
+        args.subscription.billingFrequency,
+        args.subscription.billingDay ?? null
+    );
+
+    const updatedSubscription = await SubscriptionModel.findOneAndUpdate(
+        {
+            _id: args.subscription._id,
+            workspaceId: args.workspaceId,
+        },
+        {
+            $set: {
+                lastTransactionId: args.transactionId,
+                nextBillingDate,
+            },
+        },
+        { new: true }
+    ).lean<SubscriptionDocument | null>();
+
+    if (!updatedSubscription) {
+        throw new SubscriptionServiceError(
+            "No fue posible actualizar la suscripción después de crear la transacción.",
+            500,
+            "SUBSCRIPTION_UPDATE_AFTER_TRANSACTION_FAILED"
+        );
+    }
+
+    return toSubscriptionPayload(updatedSubscription);
 }
 
 export async function getSubscriptionsService(
@@ -524,10 +658,7 @@ export async function deleteSubscriptionService(
 
 export async function createTransactionFromSubscriptionService(
     input: CreateSubscriptionTransactionServiceInput
-): Promise<{
-    subscription: SubscriptionDocument;
-    transaction: TransactionDocument;
-}> {
+): Promise<SubscriptionTransactionResult> {
     const { workspaceId, subscriptionId, body, workspace, createdByUserId } = input;
     const subscription = await findSubscriptionById(workspaceId, subscriptionId);
 
@@ -547,66 +678,175 @@ export async function createTransactionFromSubscriptionService(
         );
     }
 
-    const transactionDate = body.transactionDate ?? subscription.nextBillingDate.toISOString();
-    const transaction = await createTransactionService({
+    const billingDate = body.transactionDate
+        ? parseRequiredDate(body.transactionDate)
+        : subscription.nextBillingDate;
+    const existingTransaction = await findExistingGeneratedTransaction({
         workspaceId,
-        workspace,
-        body: {
-            accountId: subscription.accountId?.toString() ?? null,
-            destinationAccountId: null,
-            cardId: subscription.cardId?.toString() ?? null,
-            debtId: null,
-            memberId: subscription.memberId.toString(),
-            categoryId: subscription.categoryId.toString(),
-            type: "expense",
-            cashflowDirection: "out",
-            amount: subscription.amount,
-            currency: subscription.currency,
-            description: `Suscripción: ${subscription.name}`,
-            merchant: subscription.merchant ?? subscription.name,
-            transactionDate,
-            status: body.status ?? "posted",
-            reference: normalizeNullableString(body.reference),
-            notes:
-                normalizeNullableString(body.notes) ??
-                `Generada desde suscripción: ${subscription.name}`,
-            isRecurring: false,
-            recurrenceRule: null,
-            isVisible: true,
-            createdByUserId: createdByUserId.toString(),
-        },
+        subscriptionId,
+        billingDate,
     });
 
-    const nextBillingDate = addBillingFrequency(
-        parseRequiredDate(transactionDate),
-        subscription.billingFrequency,
-        subscription.billingDay ?? null
-    );
-
-    const updatedSubscription = await SubscriptionModel.findOneAndUpdate(
-        {
-            _id: subscriptionId,
-            workspaceId,
-        },
-        {
-            $set: {
-                lastTransactionId: transaction._id,
-                nextBillingDate,
-            },
-        },
-        { new: true }
-    ).lean<SubscriptionDocument | null>();
-
-    if (!updatedSubscription) {
+    if (existingTransaction) {
         throw new SubscriptionServiceError(
-            "No fue posible actualizar la suscripción después de crear la transacción.",
-            500,
-            "SUBSCRIPTION_UPDATE_AFTER_TRANSACTION_FAILED"
+            "Ya existe una transacción generada para esta suscripción y fecha de cobro.",
+            409,
+            "SUBSCRIPTION_TRANSACTION_ALREADY_EXISTS"
         );
     }
 
+    const transaction = await createGeneratedTransactionFromSubscription({
+        workspaceId,
+        workspace,
+        subscription,
+        billingDate,
+        createdByUserId,
+        status: body.status,
+        reference: body.reference,
+        notes: body.notes,
+    });
+    const updatedSubscription = await advanceSubscriptionAfterTransaction({
+        workspaceId,
+        subscription,
+        billingDate,
+        transactionId: transaction._id,
+    });
+
     return {
-        subscription: toSubscriptionPayload(updatedSubscription),
+        subscription: updatedSubscription,
         transaction,
+    };
+}
+
+export async function processDueSubscriptionsService(
+    input: ProcessDueSubscriptionsServiceInput
+): Promise<ProcessDueSubscriptionsResult> {
+    const { workspaceId, body, workspace } = input;
+    const dryRun = body.dryRun ?? true;
+    const asOfDate = body.asOfDate ? parseRequiredDate(body.asOfDate) : new Date();
+    const limit = body.limit ?? 50;
+    const dueSubscriptions = await SubscriptionModel.find({
+        workspaceId,
+        status: "active",
+        isVisible: true,
+        autoCreateTransaction: true,
+        nextBillingDate: { $lte: asOfDate },
+    })
+        .sort({ nextBillingDate: 1, createdAt: 1 })
+        .limit(limit)
+        .lean<SubscriptionDocument[]>();
+    const items: ProcessDueSubscriptionItem[] = [];
+    let generatedCount = 0;
+    let skippedCount = 0;
+
+    for (const subscription of dueSubscriptions) {
+        const scheduledBillingDate = subscription.nextBillingDate;
+        const nextBillingDate = addBillingFrequency(
+            scheduledBillingDate,
+            subscription.billingFrequency,
+            subscription.billingDay ?? null
+        );
+
+        if (subscription.endDate && scheduledBillingDate.getTime() > subscription.endDate.getTime()) {
+            items.push({
+                subscriptionId: subscription._id,
+                subscriptionName: subscription.name,
+                scheduledBillingDate,
+                nextBillingDate: scheduledBillingDate,
+                action: "skipped_end_date",
+                reason: "La fecha programada ya rebasa la fecha final de la suscripción.",
+                transactionId: null,
+            });
+            skippedCount += 1;
+            continue;
+        }
+
+        const existingTransaction = await findExistingGeneratedTransaction({
+            workspaceId,
+            subscriptionId: subscription._id,
+            billingDate: scheduledBillingDate,
+        });
+
+        if (existingTransaction) {
+            if (!dryRun) {
+                await SubscriptionModel.updateOne(
+                    {
+                        _id: subscription._id,
+                        workspaceId,
+                    },
+                    {
+                        $set: {
+                            lastTransactionId: existingTransaction._id,
+                            nextBillingDate,
+                        },
+                    }
+                );
+            }
+
+            items.push({
+                subscriptionId: subscription._id,
+                subscriptionName: subscription.name,
+                scheduledBillingDate,
+                nextBillingDate,
+                action: "skipped_duplicate",
+                reason: "Ya existía una transacción generada con la misma referencia; se evita duplicar.",
+                transactionId: existingTransaction._id,
+            });
+            skippedCount += 1;
+            continue;
+        }
+
+        if (dryRun) {
+            items.push({
+                subscriptionId: subscription._id,
+                subscriptionName: subscription.name,
+                scheduledBillingDate,
+                nextBillingDate,
+                action: "would_create",
+                reason: null,
+                transactionId: null,
+            });
+            continue;
+        }
+
+        const createdByUserId = input.createdByUserId ?? subscription.memberId;
+        const transaction = await createGeneratedTransactionFromSubscription({
+            workspaceId,
+            workspace,
+            subscription,
+            billingDate: scheduledBillingDate,
+            createdByUserId,
+            status: "posted",
+            reference: null,
+            notes: null,
+        });
+
+        await advanceSubscriptionAfterTransaction({
+            workspaceId,
+            subscription,
+            billingDate: scheduledBillingDate,
+            transactionId: transaction._id,
+        });
+
+        items.push({
+            subscriptionId: subscription._id,
+            subscriptionName: subscription.name,
+            scheduledBillingDate,
+            nextBillingDate,
+            action: "created",
+            reason: null,
+            transactionId: transaction._id,
+        });
+        generatedCount += 1;
+    }
+
+    return {
+        dryRun,
+        asOfDate,
+        scannedCount: dueSubscriptions.length,
+        dueCount: dueSubscriptions.length,
+        generatedCount,
+        skippedCount,
+        items,
     };
 }

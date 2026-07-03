@@ -1,5 +1,6 @@
 // src/subscriptions/controllers/subscriptions.controller.ts
-// Express controllers for subscription CRUD and reviewed transaction creation.
+// Express controllers for subscription CRUD, reviewed transaction creation,
+// and Phase 9B due subscription processing.
 
 import type { RequestHandler } from "express";
 import { Types } from "mongoose";
@@ -11,11 +12,13 @@ import {
     getSubscriptionByIdService,
     getSubscriptionsService,
     isSubscriptionServiceError,
+    processDueSubscriptionsService,
     updateSubscriptionService,
 } from "../services/subscriptions.service";
 import type {
     CreateSubscriptionBody,
     CreateSubscriptionTransactionBody,
+    ProcessDueSubscriptionsBody,
     SubscriptionParams,
     UpdateSubscriptionBody,
     WorkspaceSubscriptionParams,
@@ -295,6 +298,51 @@ export const createSubscriptionTransactionController: RequestHandler<
             message: "Transacción creada desde suscripción correctamente.",
             subscription: result.subscription,
             transaction: result.transaction,
+        });
+    } catch (error) {
+        if (error instanceof Error && handleObjectIdError(error, res)) {
+            return;
+        }
+
+        if (error instanceof Error && isSubscriptionServiceError(error)) {
+            res.status(error.statusCode).json({
+                code: error.code,
+                message: error.message,
+            });
+            return;
+        }
+
+        next(error);
+    }
+};
+
+export const processDueSubscriptionsController: RequestHandler<
+    WorkspaceSubscriptionParams,
+    object,
+    ProcessDueSubscriptionsBody
+> = async (req, res, next): Promise<void> => {
+    try {
+        if (!req.workspace || !req.workspaceMember) {
+            res.status(404).json({
+                code: "WORKSPACE_NOT_FOUND",
+                message: "Workspace no encontrado.",
+            });
+            return;
+        }
+
+        const workspaceId = getObjectIdOrThrow(req.params.workspaceId);
+        const result = await processDueSubscriptionsService({
+            workspaceId,
+            body: req.body,
+            workspace: req.workspace,
+            createdByUserId: req.workspaceMember._id,
+        });
+
+        res.status(200).json({
+            message: result.dryRun
+                ? "Simulación de suscripciones vencidas completada."
+                : "Suscripciones vencidas procesadas correctamente.",
+            result,
         });
     } catch (error) {
         if (error instanceof Error && handleObjectIdError(error, res)) {

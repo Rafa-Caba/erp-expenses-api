@@ -1,18 +1,25 @@
 // src/subscriptions/routes/subscriptions.routes.ts
+// Routes for subscription CRUD, reviewed transaction creation, and Phase 9B
+// due subscription processing.
 
 import { Router } from "express";
 
+import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
+import { requireWorkspacePermission } from "@/src/middlewares/requireWorkspacePermission";
+import { validateRequest } from "@/src/middlewares/validateRequest";
 import {
     createSubscriptionController,
     createSubscriptionTransactionController,
     deleteSubscriptionController,
     getSubscriptionByIdController,
     getSubscriptionsController,
+    processDueSubscriptionsController,
     updateSubscriptionController,
 } from "../controllers/subscriptions.controller";
 import {
     createSubscriptionSchema,
     createSubscriptionTransactionSchema,
+    processDueSubscriptionsSchema,
     subscriptionParamsSchema,
     updateSubscriptionSchema,
     workspaceSubscriptionParamsSchema,
@@ -20,13 +27,11 @@ import {
 import type {
     CreateSubscriptionBody,
     CreateSubscriptionTransactionBody,
+    ProcessDueSubscriptionsBody,
     SubscriptionParams,
     UpdateSubscriptionBody,
     WorkspaceSubscriptionParams,
 } from "../types/subscription.types";
-import { requireWorkspaceAccess } from "@/src/middlewares/requireWorkspaceAccess";
-import { requireWorkspacePermission } from "@/src/middlewares/requireWorkspacePermission";
-import { validateRequest } from "@/src/middlewares/validateRequest";
 
 const subscriptionRouter = Router({ mergeParams: true });
 
@@ -37,6 +42,15 @@ subscriptionRouter.get<WorkspaceSubscriptionParams>(
     validateRequest(workspaceSubscriptionParamsSchema),
     requireWorkspacePermission("subscriptions.read"),
     getSubscriptionsController
+);
+
+subscriptionRouter.post<WorkspaceSubscriptionParams, object, ProcessDueSubscriptionsBody>(
+    "/process-due",
+    validateRequest(workspaceSubscriptionParamsSchema),
+    validateRequest(processDueSubscriptionsSchema),
+    requireWorkspacePermission("subscriptions.update"),
+    requireWorkspacePermission("transactions.create"),
+    processDueSubscriptionsController
 );
 
 subscriptionRouter.get<SubscriptionParams>(

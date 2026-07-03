@@ -1,13 +1,17 @@
 // src/subscriptions/types/subscription.types.ts
 // API contracts for subscription/recurring expense records.
-// Phase 9A keeps subscriptions separate from debts: subscriptions track
-// expected recurring expenses and can create reviewed expense transactions.
+// Phase 9A keeps subscriptions separate from debts.
+// Phase 9B adds a recurring engine that can preview or generate due transactions
+// from active subscriptions marked with autoCreateTransaction.
 
 import type { ParamsDictionary } from "express-serve-static-core";
 import type { Types } from "mongoose";
 
 import type { CurrencyCode } from "@/src/shared/types/common";
-import type { TransactionStatus } from "@/src/transactions/types/transaction.types";
+import type {
+    TransactionDocument,
+    TransactionStatus,
+} from "@/src/transactions/types/transaction.types";
 import type { WorkspaceDocument } from "@/src/workspaces/models/Workspace.model";
 
 export const SUBSCRIPTION_STATUS_VALUES = [
@@ -25,6 +29,16 @@ export const SUBSCRIPTION_BILLING_FREQUENCY_VALUES = [
 ] as const;
 export type SubscriptionBillingFrequency =
     (typeof SUBSCRIPTION_BILLING_FREQUENCY_VALUES)[number];
+
+export const SUBSCRIPTION_PROCESS_DUE_ACTION_VALUES = [
+    "would_create",
+    "created",
+    "skipped_duplicate",
+    "skipped_end_date",
+    "skipped_inactive",
+] as const;
+export type SubscriptionProcessDueAction =
+    (typeof SUBSCRIPTION_PROCESS_DUE_ACTION_VALUES)[number];
 
 export interface SubscriptionDocument {
     _id: Types.ObjectId;
@@ -108,6 +122,32 @@ export interface CreateSubscriptionTransactionBody {
     notes?: string | null;
 }
 
+export interface ProcessDueSubscriptionsBody {
+    asOfDate?: string;
+    dryRun?: boolean;
+    limit?: number;
+}
+
+export interface ProcessDueSubscriptionItem {
+    subscriptionId: Types.ObjectId;
+    subscriptionName: string;
+    scheduledBillingDate: Date;
+    nextBillingDate: Date;
+    action: SubscriptionProcessDueAction;
+    reason: string | null;
+    transactionId: Types.ObjectId | null;
+}
+
+export interface ProcessDueSubscriptionsResult {
+    dryRun: boolean;
+    asOfDate: Date;
+    scannedCount: number;
+    dueCount: number;
+    generatedCount: number;
+    skippedCount: number;
+    items: ProcessDueSubscriptionItem[];
+}
+
 export interface CreateSubscriptionServiceInput {
     workspaceId: Types.ObjectId;
     body: CreateSubscriptionBody;
@@ -133,4 +173,16 @@ export interface CreateSubscriptionTransactionServiceInput {
     createdByUserId: Types.ObjectId;
     body: CreateSubscriptionTransactionBody;
     workspace: WorkspaceDocument;
+}
+
+export interface ProcessDueSubscriptionsServiceInput {
+    workspaceId: Types.ObjectId;
+    createdByUserId?: Types.ObjectId | null;
+    body: ProcessDueSubscriptionsBody;
+    workspace: WorkspaceDocument;
+}
+
+export interface SubscriptionTransactionResult {
+    subscription: SubscriptionDocument;
+    transaction: TransactionDocument;
 }

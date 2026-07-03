@@ -1,13 +1,14 @@
 // src/subscriptions/schemas/subscription.schemas.ts
 // Zod request validation for subscriptions/recurring expenses.
+// Phase 9B adds process-due validation for the recurring subscription engine.
 
 import { z } from "zod";
 
+import { TRANSACTION_STATUS_VALUES } from "@/src/transactions/types/transaction.types";
 import {
     SUBSCRIPTION_BILLING_FREQUENCY_VALUES,
     SUBSCRIPTION_STATUS_VALUES,
 } from "../types/subscription.types";
-import { TRANSACTION_STATUS_VALUES } from "@/src/transactions/types/transaction.types";
 
 function isValidDateString(value: string): boolean {
     const parsedDate = new Date(value);
@@ -197,6 +198,23 @@ const createSubscriptionTransactionBodySchema = z.object({
     ),
 });
 
+const processDueSubscriptionsBodySchema = z.object({
+    asOfDate: z
+        .string()
+        .trim()
+        .refine(isValidDateString, {
+            message: "La fecha de corte no es válida.",
+        })
+        .optional(),
+    dryRun: z.boolean().optional(),
+    limit: z
+        .number({ message: "El límite debe ser numérico." })
+        .int("El límite debe ser un número entero.")
+        .min(1, "El límite mínimo es 1.")
+        .max(100, "El límite máximo es 100.")
+        .optional(),
+});
+
 export const workspaceSubscriptionParamsSchema = z.object({
     params: z.object({
         workspaceId: z.string().trim().min(1, "El id del workspace es obligatorio."),
@@ -220,4 +238,8 @@ export const updateSubscriptionSchema = z.object({
 
 export const createSubscriptionTransactionSchema = z.object({
     body: createSubscriptionTransactionBodySchema,
+});
+
+export const processDueSubscriptionsSchema = z.object({
+    body: processDueSubscriptionsBodySchema,
 });
